@@ -11,14 +11,16 @@ import UploadPage from './pages/Upload';
 import ReviewPage from './pages/Review';
 import TransactionsPage from './pages/Transactions';
 import SidebarLayout from './components/SidebarLayout';
-import type { PageType } from './types';
+import { useAppStore } from './stores/useAppStore';
 
 
 export default function App() {
   console.log("App component executing...");
-  const [session, setSession] = useState<any>(null);
+  const session = useAppStore((state) => state.session);
+  const setSession = useAppStore((state) => state.setSession);
+  const currentPage = useAppStore((state) => state.currentPage);
+  const setCurrentPage = useAppStore((state) => state.setCurrentPage);
   const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState<PageType>('dashboard');
 
   useEffect(() => {
     // Buscar sessão atual
@@ -34,7 +36,7 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [setSession]);
 
   if (loading) {
     return (
