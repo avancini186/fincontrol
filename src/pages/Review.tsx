@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Box, 
   Card, 
@@ -17,9 +17,8 @@ import {
   MenuItem, 
   TextField, 
   CircularProgress,
-  Alert,
   Checkbox,
-  Chip
+  Tooltip
 } from '@mui/material';
 import { 
   Check, 
@@ -268,7 +267,7 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
                         value={tx.date}
                         onChange={(e) => handleFieldChange(tx.id, 'date', e.target.value)}
                         variant="standard"
-                        InputProps={{ disableUnderline: true }}
+                        slotProps={{ input: { disableUnderline: true } }}
                         sx={{ width: 120 }}
                       />
                     </TableCell>
@@ -286,7 +285,7 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
                         value={tx.description}
                         onChange={(e) => handleFieldChange(tx.id, 'description', e.target.value)}
                         variant="standard"
-                        InputProps={{ disableUnderline: true }}
+                        slotProps={{ input: { disableUnderline: true } }}
                         fullWidth
                       />
                     </TableCell>
@@ -318,8 +317,10 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
                         value={tx.amount}
                         onChange={(e) => handleFieldChange(tx.id, 'amount', parseFloat(e.target.value) || 0)}
                         variant="standard"
-                        InputProps={{ disableUnderline: true }}
-                        inputProps={{ style: { textAlign: 'right', fontWeight: 'bold', color: isExpense ? '#F2B8B5' : '#81C784' } }}
+                        slotProps={{
+                          input: { disableUnderline: true },
+                          htmlInput: { style: { textAlign: 'right', fontWeight: 'bold', color: isExpense ? '#F2B8B5' : '#81C784' } }
+                        }}
                         sx={{ width: 90 }}
                       />
                     </TableCell>

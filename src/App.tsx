@@ -1,9 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Box, 
   CircularProgress,
-  ThemeProvider,
-  CssBaseline
 } from '@mui/material';
 import { supabase } from './supabaseClient';
 import AuthPage from './pages/Auth';

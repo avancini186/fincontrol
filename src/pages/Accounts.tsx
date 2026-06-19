@@ -173,7 +173,7 @@ export default function AccountsPage() {
           {accounts.map((acc) => {
             const isCard = acc.type === 'credit_card';
             return (
-              <Grid item xs={12} sm={6} md={4} key={acc.id}>
+              <Grid size={{ xs: 12, sm: 6, md: 4 }} key={acc.id}>
                 <Card 
                   sx={{ 
                     position: 'relative',
@@ -308,7 +308,7 @@ export default function AccountsPage() {
                   fullWidth
                 />
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
+                  <Grid size={6}>
                     <TextField
                       label="Dia de Fechamento"
                       type="number"
@@ -319,7 +319,7 @@ export default function AccountsPage() {
                       fullWidth
                     />
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid size={6}>
                     <TextField
                       label="Dia de Vencimento"
                       type="number"

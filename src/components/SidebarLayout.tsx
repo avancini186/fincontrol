@@ -103,8 +103,7 @@ export default function SidebarLayout({ children, currentPage, onNavigate }: Sid
                   {item.icon}
                 </ListItemIcon>
                 <ListItemText 
-                  primary={item.text} 
-                  primaryTypographyProps={{ fontSize: '0.95rem', fontWeight: isActive ? 600 : 500 }} 
+                  primary={<Typography sx={{ fontSize: '0.95rem', fontWeight: isActive ? 600 : 500 }}>{item.text}</Typography>} 
                 />
               </ListItemButton>
             </ListItem>
@@ -172,12 +171,12 @@ export default function SidebarLayout({ children, currentPage, onNavigate }: Sid
             >
               {userEmail ? userEmail[0].toUpperCase() : 'U'}
             </Avatar>
-            <Menu
+             <Menu
               anchorEl={anchorEl}
               open={Boolean(anchorEl)}
               onClose={() => setAnchorEl(null)}
-              PaperProps={{
-                sx: { mt: 1, bgcolor: 'background.paper', borderRadius: 3 }
+              slotProps={{
+                paper: { sx: { mt: 1, bgcolor: 'background.paper', borderRadius: 3 } }
               }}
             >
               <MenuItem onClick={handleLogout} sx={{ color: 'error.main', gap: 1 }}>

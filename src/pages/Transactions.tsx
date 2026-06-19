@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Box, 
   Card, 
@@ -16,7 +16,8 @@ import {
   Grid, 
   CircularProgress,
   IconButton,
-  Button
+  Button,
+  Chip
 } from '@mui/material';
 import { 
   Search, 
@@ -164,8 +165,8 @@ export default function TransactionsPage() {
       {/* Grid de Filtros */}
       <Card sx={{ mb: 4, bgcolor: 'background.paper', p: 1 }}>
         <CardContent>
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} sm={4}>
+          <Grid container spacing={2} sx={{ alignItems: 'center' }}>
+            <Grid size={{ xs: 12, sm: 4 }}>
               <TextField
                 fullWidth
                 size="small"
@@ -173,21 +174,23 @@ export default function TransactionsPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && fetchData()}
-                InputProps={{
-                  endAdornment: search ? (
-                    <IconButton size="small" onClick={() => { setSearch(''); fetchData(); }}>
-                      <Clear />
-                    </IconButton>
-                  ) : (
-                    <IconButton size="small" onClick={fetchData}>
-                      <Search />
-                    </IconButton>
-                  )
+                slotProps={{
+                  input: {
+                    endAdornment: search ? (
+                      <IconButton size="small" onClick={() => { setSearch(''); fetchData(); }}>
+                        <Clear />
+                      </IconButton>
+                    ) : (
+                      <IconButton size="small" onClick={fetchData}>
+                        <Search />
+                      </IconButton>
+                    )
+                  }
                 }}
               />
             </Grid>
 
-            <Grid item xs={12} sm={3}>
+            <Grid size={{ xs: 12, sm: 3 }}>
               <TextField
                 select
                 fullWidth
@@ -203,7 +206,7 @@ export default function TransactionsPage() {
               </TextField>
             </Grid>
 
-            <Grid item xs={12} sm={3}>
+            <Grid size={{ xs: 12, sm: 3 }}>
               <TextField
                 select
                 fullWidth
@@ -219,7 +222,7 @@ export default function TransactionsPage() {
               </TextField>
             </Grid>
 
-            <Grid item xs={12} sm={2}>
+            <Grid size={{ xs: 12, sm: 2 }}>
               <Button 
                 fullWidth 
                 variant="text" 

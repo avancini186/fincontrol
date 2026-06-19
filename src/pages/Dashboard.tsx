@@ -175,7 +175,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
       {/* Grid de KPIs */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={4}>
+        <Grid size={{ xs: 12, sm: 4 }}>
           <Card>
             <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
@@ -191,7 +191,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={4}>
+        <Grid size={{ xs: 12, sm: 4 }}>
           <Card>
             <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
@@ -207,7 +207,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={4}>
+        <Grid size={{ xs: 12, sm: 4 }}>
           <Card>
             <CardContent sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
@@ -227,7 +227,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
       {/* Gráficos */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {/* Despesas por Categoria */}
-        <Grid item xs={12} md={5}>
+        <Grid size={{ xs: 12, md: 5 }}>
           <Card sx={{ height: 380, display: 'flex', flexDirection: 'column' }}>
             <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>Gastos por Categoria</Typography>
@@ -263,7 +263,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         </Grid>
 
         {/* Evolução Mensal */}
-        <Grid item xs={12} md={7}>
+        <Grid size={{ xs: 12, md: 7 }}>
           <Card sx={{ height: 380, display: 'flex', flexDirection: 'column' }}>
             <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>Evolução Mensal</Typography>
@@ -292,7 +292,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
 
       {/* Recentes & Atalhos */}
       <Grid container spacing={3}>
-        <Grid item xs={12} md={7}>
+        <Grid size={{ xs: 12, md: 7 }}>
           <Card>
             <CardContent>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 2 }}>Últimos Lançamentos Confirmados</Typography>
@@ -333,7 +333,7 @@ export default function DashboardPage({ onNavigate }: DashboardPageProps) {
         </Grid>
 
         {/* Links Rápidos */}
-        <Grid item xs={12} md={5}>
+        <Grid size={{ xs: 12, md: 5 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <Typography variant="h6" sx={{ fontWeight: 'bold', mb: 1 }}>Ações Rápidas</Typography>
