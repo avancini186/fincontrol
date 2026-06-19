@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
-import pdf from "npm:pdf-parse/lib/pdf-parse.js";
+import { extractText, getDocumentProxy } from "npm:unpdf";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -76,11 +76,11 @@ serve(async (req) => {
         const mimeType = fileType === "png" ? "image/png" : "image/jpeg";
         transactions = await parseImageWithOpenAI(base64Data, mimeType, openaiApiKey, statement.account_id, statement.user_id, statementId);
       } else if (fileType === "pdf") {
-        // Extrair texto real do PDF
+        // Extrair texto real do PDF usando unpdf (pure JS)
         try {
           const arrayBuffer = await fileBlob.arrayBuffer();
-          const pdfData = await pdf(new Uint8Array(arrayBuffer));
-          const text = pdfData.text;
+          const pdfProxy = await getDocumentProxy(new Uint8Array(arrayBuffer));
+          const { text } = await extractText(pdfProxy, { mergePages: true });
           
           if (text && text.trim().length > 100) {
             console.log(`Texto do PDF extraído com sucesso (${text.length} caracteres). Enviando para OpenAI...`);
@@ -90,7 +90,7 @@ serve(async (req) => {
             transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
           }
         } catch (pdfErr: any) {
-          console.error("Erro ao parsear PDF com pdf-parse:", pdfErr);
+          console.error("Erro ao parsear PDF com unpdf:", pdfErr);
           // Fallback para mock se falhar o parsing do PDF
           transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
         }
