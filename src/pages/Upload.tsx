@@ -163,6 +163,138 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     return transactions;
   };
 
+  const parseTextLocal = (text: string): any[] => {
+    const transactions: any[] = [];
+    const lines = text.split(/\r?\n/);
+    
+    const monthsMap: Record<string, number> = {
+      'jan': 0, 'feb': 1, 'fev': 1, 'mar': 2, 'apr': 3, 'abr': 3, 'may': 4, 'mai': 4, 'jun': 5,
+      'jul': 6, 'aug': 7, 'ago': 7, 'sep': 8, 'set': 8, 'oct': 9, 'out': 9, 'nov': 10, 'dec': 11, 'dez': 11
+    };
+    
+    const currentYear = new Date().getFullYear();
+    
+    for (let line of lines) {
+      line = line.trim();
+      if (!line) continue;
+      
+      const amountRegex = /(?:R\$\s*)?(-?\s*\d{1,3}(?:\.\d{3})*,\d{2}|-?\s*\d+,\d{2}|-?\s*\d{1,3}(?:\,\d{3})*\.\d{2}|-?\s*\d+\.\d{2})\b/;
+      const amountMatch = line.match(amountRegex);
+      if (!amountMatch) continue;
+      
+      const rawAmountStr = amountMatch[1];
+      let amount = parseFloat(rawAmountStr.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+      
+      let dateStr = new Date().toISOString().split('T')[0];
+      let dateMatch = line.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/) || 
+                      line.match(/\b(\d{1,2})\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/i);
+      
+      if (dateMatch) {
+        if (dateMatch[2] && isNaN(Number(dateMatch[2]))) {
+          const day = parseInt(dateMatch[1]);
+          const monthStr = dateMatch[2].toLowerCase();
+          const month = monthsMap[monthStr] ?? 0;
+          const d = new Date(currentYear, month, day);
+          dateStr = d.toISOString().split('T')[0];
+        } else {
+          const day = parseInt(dateMatch[1]);
+          const month = parseInt(dateMatch[2]) - 1;
+          const year = dateMatch[3] ? (dateMatch[3].length === 2 ? 2000 + parseInt(dateMatch[3]) : parseInt(dateMatch[3])) : currentYear;
+          const d = new Date(year, month, day);
+          dateStr = d.toISOString().split('T')[0];
+        }
+      }
+      
+      let description = line
+        .replace(amountRegex, '')
+        .replace(/\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/, '')
+        .replace(/\b\d{1,2}\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/i, '')
+        .replace(/[\-\+R\$]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+        
+      if (description.length < 2) {
+        description = "Transação PDF";
+      }
+      
+      const isCredit = description.toLowerCase().includes('pagamento') || 
+                       description.toLowerCase().includes('recebido') || 
+                       description.toLowerCase().includes('estorno') || 
+                       description.toLowerCase().includes('crédito');
+      if (amount > 0 && !isCredit) {
+        amount = -amount;
+      }
+      
+      let category = 'Outros';
+      const descLower = description.toLowerCase();
+      if (descLower.includes('mercado') || descLower.includes('pao de acucar') || descLower.includes('carrefour') || descLower.includes('super')) {
+        category = 'Alimentação';
+      } else if (descLower.includes('uber') || descLower.includes('99') || descLower.includes('posto') || descLower.includes('combustivel')) {
+        category = 'Transporte';
+      } else if (descLower.includes('netflix') || descLower.includes('spotify') || descLower.includes('cinema') || descLower.includes('lazer')) {
+        category = 'Lazer';
+      } else if (descLower.includes('farmacia') || descLower.includes('drogaria') || descLower.includes('hospital') || descLower.includes('saude')) {
+        category = 'Saúde';
+      } else if (descLower.includes('aluguel') || descLower.includes('condominio') || descLower.includes('luz') || descLower.includes('agua')) {
+        category = 'Moradia';
+      } else if (descLower.includes('salario') || descLower.includes('remuneracao') || descLower.includes('recebido')) {
+        category = 'Salário';
+      }
+
+      transactions.push({
+        date: dateStr,
+        description: description,
+        amount: amount,
+        type: amount < 0 ? 'debit' : 'credit',
+        category: category,
+        merchant: description,
+        raw_description: line,
+        category_confirmed: false
+      });
+    }
+    
+    return transactions;
+  };
+
+  const extractTextFromPDF = async (pdfFile: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!(window as any).pdfjsLib) {
+        setStatusMessage({ type: 'info', text: 'Carregando motor de PDF local...' });
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = () => {
+          (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+          startExtraction(pdfFile, resolve, reject);
+        };
+        script.onerror = () => reject(new Error('Erro ao carregar motor de PDF local.'));
+        document.head.appendChild(script);
+      } else {
+        startExtraction(pdfFile, resolve, reject);
+      }
+    });
+  };
+
+  const startExtraction = async (pdfFile: File, resolve: (val: string) => void, reject: (err: any) => void) => {
+    try {
+      const pdfjsLib = (window as any).pdfjsLib;
+      const arrayBuffer = await pdfFile.arrayBuffer();
+      const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) });
+      const pdf = await loadingTask.promise;
+      
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        setStatusMessage({ type: 'info', text: `Lendo página ${i} de ${pdf.numPages}...` });
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map((item: any) => (item as any).str).join(' ');
+        fullText += pageText + '\n';
+      }
+      resolve(fullText);
+    } catch (err) {
+      reject(err);
+    }
+  };
+
   const validateAndSetFile = (selectedFile: File) => {
     setStatusMessage(null);
     const validExtensions = ['csv', 'pdf', 'jpg', 'jpeg', 'png', 'ofx'];
@@ -185,6 +317,18 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     setStatusMessage({ type: 'info', text: 'Preparando upload...' });
 
     try {
+      const fileExtension = file.name.split('.').pop()?.toLowerCase();
+      
+      // Extrair texto localmente se for PDF antes de qualquer coisa
+      let pdfText = '';
+      if (fileExtension === 'pdf') {
+        try {
+          pdfText = await extractTextFromPDF(file);
+        } catch (pdfErr) {
+          console.error('Erro na extração local de PDF:', pdfErr);
+        }
+      }
+
       // 1. Verificar/criar o bucket
       await ensureStorageBucket();
       setUploadProgress(30);
@@ -193,7 +337,6 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
       const userId = userData.user?.id;
       if (!userId) throw new Error('Usuário não autenticado');
 
-      const fileExtension = file.name.split('.').pop()?.toLowerCase();
       const filePath = `${userId}/${Date.now()}_${file.name}`;
 
       // 2. Upload para o Supabase Storage
@@ -225,10 +368,52 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
       if (dbError) throw dbError;
       setUploadProgress(90);
 
-      // 4. Acionar a Edge Function para fazer o parsing (fallback local/mock se der erro ou não estiver configurada)
-      setStatusMessage({ type: 'info', text: 'Lançando processamento inteligente...' });
-      
-      try {
+      // 4. Acionar a Edge Function para fazer o parsing (ou fazer localmente para PDF/OFX)
+      let localTransactions: any[] = [];
+      let parsedLocally = false;
+
+      if (fileExtension === 'ofx') {
+        try {
+          setStatusMessage({ type: 'info', text: 'Processando arquivo OFX localmente...' });
+          const text = await file.text();
+          const parsed = parseOFXString(text);
+          localTransactions = parsed.map(tx => ({
+            ...tx,
+            user_id: userId,
+            account_id: selectedAccount,
+            statement_id: statement.id
+          }));
+          parsedLocally = true;
+        } catch (ofxErr) {
+          console.error('Erro ao parsear OFX localmente:', ofxErr);
+        }
+      } else if (fileExtension === 'pdf' && pdfText) {
+        try {
+          setStatusMessage({ type: 'info', text: 'Processando texto do PDF localmente...' });
+          const parsed = parseTextLocal(pdfText);
+          localTransactions = parsed.map(tx => ({
+            ...tx,
+            user_id: userId,
+            account_id: selectedAccount,
+            statement_id: statement.id
+          }));
+          parsedLocally = true;
+        } catch (pdfLocalErr) {
+          console.error('Erro ao parsear PDF localmente:', pdfLocalErr);
+        }
+      }
+
+      if (parsedLocally) {
+        if (localTransactions.length > 0) {
+          const { error: insertErr } = await supabase.from('transactions').insert(localTransactions);
+          if (insertErr) throw insertErr;
+          await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
+        } else {
+          throw new Error('Nenhuma transação encontrada no arquivo PDF/OFX.');
+        }
+      } else {
+        // Para imagens (PNG/JPG), chamamos a Edge Function inteligente
+        setStatusMessage({ type: 'info', text: 'Processando com inteligência artificial...' });
         const { error: functionError } = await supabase.functions.invoke('parse-statement', {
           body: { statementId: statement.id }
         });
@@ -236,74 +421,6 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         if (functionError) {
           throw functionError;
         }
-      } catch (fnErr) {
-        console.warn('Edge Function indisponível ou falhou. Simulando processamento para testes locais...');
-        // Simulando resposta local bem sucedida do processamento
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        let localTransactions: any[] = [];
-        
-        if (fileExtension === 'ofx') {
-          try {
-            const text = await file.text();
-            const parsed = parseOFXString(text);
-            localTransactions = parsed.map(tx => ({
-              ...tx,
-              user_id: userId,
-              account_id: selectedAccount,
-              statement_id: statement.id
-            }));
-          } catch (ofxErr) {
-            console.error('Erro ao parsear OFX localmente:', ofxErr);
-          }
-        }
-        
-        if (localTransactions.length === 0) {
-          localTransactions = [
-            {
-              user_id: userId,
-              account_id: selectedAccount,
-              statement_id: statement.id,
-              date: new Date().toISOString().split('T')[0],
-              description: 'Supermercado Pão de Açúcar',
-              amount: -184.50,
-              type: 'debit',
-              category: 'Alimentação',
-              merchant: 'Pão de Açúcar',
-              category_confirmed: false,
-              raw_description: 'PAO DE ACUCAR LJ 12'
-            },
-            {
-              user_id: userId,
-              account_id: selectedAccount,
-              statement_id: statement.id,
-              date: new Date().toISOString().split('T')[0],
-              description: 'Posto Ipiranga Combustível',
-              amount: -80.00,
-              type: 'debit',
-              category: 'Transporte',
-              merchant: 'Posto Ipiranga',
-              category_confirmed: false,
-              raw_description: 'POSTO IPIRANGA JACAREI'
-            },
-            {
-              user_id: userId,
-              account_id: selectedAccount,
-              statement_id: statement.id,
-              date: new Date().toISOString().split('T')[0],
-              description: 'Netflix Mensalidade',
-              amount: -55.90,
-              type: 'debit',
-              category: 'Lazer',
-              merchant: 'Netflix',
-              category_confirmed: false,
-              raw_description: 'NETFLIX.COM'
-            }
-          ];
-        }
-
-        await supabase.from('transactions').insert(localTransactions);
-        await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
       }
 
       setUploadProgress(100);

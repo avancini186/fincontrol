@@ -14,7 +14,7 @@ serve(async (req) => {
   }
 
   try {
-    const { statementId } = await req.json();
+    const { statementId, text: clientText } = await req.json();
     if (!statementId) {
       throw new Error("ID do extrato não fornecido.");
     }
@@ -62,36 +62,60 @@ serve(async (req) => {
       } else {
         transactions = await parseOFXWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
       }
-    } else if (!openaiApiKey) {
-      console.warn("OPENAI_API_KEY não configurada. Simulando transações...");
-      transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
     } else {
       // 3. Processar conforme tipo de arquivo
       if (fileType === "csv") {
         const text = await fileBlob.text();
-        transactions = await parseCSVWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
+        if (openaiApiKey) {
+          transactions = await parseCSVWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
+        } else {
+          // Local CSV fallback could be implemented, but let's default to text-based local parsing or mock if empty
+          transactions = parseTextLocal(text, statement.account_id, statement.user_id, statementId);
+        }
       } else if (fileType === "jpg" || fileType === "png") {
-        const arrayBuffer = await fileBlob.arrayBuffer();
-        const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
-        const mimeType = fileType === "png" ? "image/png" : "image/jpeg";
-        transactions = await parseImageWithOpenAI(base64Data, mimeType, openaiApiKey, statement.account_id, statement.user_id, statementId);
-      } else if (fileType === "pdf") {
-        // Extrair texto real do PDF usando unpdf (pure JS)
-        try {
+        if (openaiApiKey) {
           const arrayBuffer = await fileBlob.arrayBuffer();
-          const pdfProxy = await getDocumentProxy(new Uint8Array(arrayBuffer));
-          const { text } = await extractText(pdfProxy, { mergePages: true });
-          
-          if (text && text.trim().length > 100) {
-            console.log(`Texto do PDF extraído com sucesso (${text.length} caracteres). Enviando para OpenAI...`);
-            transactions = await parseTextWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
-          } else {
-            console.warn("Nenhum texto extraído do PDF. Usando mock...");
-            transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
+          const base64Data = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+          const mimeType = fileType === "png" ? "image/png" : "image/jpeg";
+          transactions = await parseImageWithOpenAI(base64Data, mimeType, openaiApiKey, statement.account_id, statement.user_id, statementId);
+        } else {
+          console.warn("OPENAI_API_KEY não configurada para leitura de imagem. Usando mock...");
+          transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
+        }
+      } else if (fileType === "pdf") {
+        let pdfText = clientText || "";
+        
+        if (!pdfText) {
+          // Tentar extrair texto real do PDF usando unpdf (pure JS)
+          try {
+            console.log("Extraindo texto do PDF usando unpdf...");
+            const arrayBuffer = await fileBlob.arrayBuffer();
+            const pdfProxy = await getDocumentProxy(new Uint8Array(arrayBuffer));
+            const extracted = await extractText(pdfProxy, { mergePages: true });
+            pdfText = extracted.text || "";
+          } catch (pdfErr: any) {
+            console.error("Erro ao parsear PDF com unpdf:", pdfErr);
           }
-        } catch (pdfErr: any) {
-          console.error("Erro ao parsear PDF com unpdf:", pdfErr);
-          // Fallback para mock se falhar o parsing do PDF
+        }
+
+        if (pdfText && pdfText.trim().length > 10) {
+          if (openaiApiKey) {
+            try {
+              console.log(`Texto do PDF obtido com sucesso (${pdfText.length} caracteres). Enviando para OpenAI...`);
+              transactions = await parseTextWithOpenAI(pdfText, openaiApiKey, statement.account_id, statement.user_id, statementId);
+            } catch (openAiErr) {
+              console.error("Erro ao chamar OpenAI. Usando parsing de texto local como fallback...", openAiErr);
+              transactions = parseTextLocal(pdfText, statement.account_id, statement.user_id, statementId);
+            }
+          } else {
+            console.warn("OPENAI_API_KEY não configurada. Parseando PDF localmente...");
+            transactions = parseTextLocal(pdfText, statement.account_id, statement.user_id, statementId);
+          }
+        }
+
+        // Se falhou todos os parsers ou o texto veio vazio
+        if (transactions.length === 0) {
+          console.warn("Nenhuma transação extraída do PDF. Usando mock...");
           transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
         }
       }
@@ -222,6 +246,113 @@ function parseOFXLocal(ofxText: string, accountId: string, userId: string, state
       category_confirmed: false
     });
   }
+  return transactions;
+}
+
+function parseTextLocal(text: string, accountId: string, userId: string, statementId: string): any[] {
+  const transactions: any[] = [];
+  const lines = text.split(/\r?\n/);
+  
+  // Meses em português para parsear datas como "19 JUN" ou "19 de Junho"
+  const monthsMap: Record<string, number> = {
+    'jan': 0, 'feb': 1, 'fev': 1, 'mar': 2, 'apr': 3, 'abr': 3, 'may': 4, 'mai': 4, 'jun': 5,
+    'jul': 6, 'aug': 7, 'ago': 7, 'sep': 8, 'set': 8, 'oct': 9, 'out': 9, 'nov': 10, 'dec': 11, 'dez': 11
+  };
+  
+  const currentYear = new Date().getFullYear();
+  
+  for (let line of lines) {
+    line = line.trim();
+    if (!line) continue;
+    
+    // Regex para capturar valores com vírgula ou ponto no final da linha ou precedidos por R$
+    const amountRegex = /(?:R\$\s*)?(-?\s*\d{1,3}(?:\.\d{3})*,\d{2}|-?\s*\d+,\d{2}|-?\s*\d{1,3}(?:\,\d{3})*\.\d{2}|-?\s*\d+\.\d{2})\b/;
+    const amountMatch = line.match(amountRegex);
+    if (!amountMatch) continue;
+    
+    const rawAmountStr = amountMatch[1];
+    // Converter valor para número float
+    let amount = parseFloat(rawAmountStr.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+    
+    // Tenta identificar a data no início ou meio da linha
+    // Exemplos: "19 JUN", "19/06/2026", "19/06"
+    let dateStr = new Date().toISOString().split('T')[0];
+    let dateMatch = line.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/) || 
+                    line.match(/\b(\d{1,2})\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/i);
+    
+    if (dateMatch) {
+      if (dateMatch[2] && isNaN(Number(dateMatch[2]))) {
+        // Formato: 19 JUN
+        const day = parseInt(dateMatch[1]);
+        const monthStr = dateMatch[2].toLowerCase();
+        const month = monthsMap[monthStr] ?? 0;
+        const d = new Date(currentYear, month, day);
+        dateStr = d.toISOString().split('T')[0];
+      } else {
+        // Formato: 19/06/2026 ou 19/06
+        const day = parseInt(dateMatch[1]);
+        const month = parseInt(dateMatch[2]) - 1;
+        const year = dateMatch[3] ? (dateMatch[3].length === 2 ? 2000 + parseInt(dateMatch[3]) : parseInt(dateMatch[3])) : currentYear;
+        const d = new Date(year, month, day);
+        dateStr = d.toISOString().split('T')[0];
+      }
+    }
+    
+    // Remover a data e o valor da linha para obter a descrição
+    let description = line
+      .replace(amountRegex, '')
+      .replace(/\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/, '')
+      .replace(/\b\d{1,2}\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/i, '')
+      .replace(/[\-\+R\$]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+      
+    if (description.length < 2) {
+      description = "Transação PDF";
+    }
+    
+    // Nubank fatura geralmente mostra valores positivos para compras (débitos na fatura) e negativos para pagamentos/créditos.
+    // Vamos normalizar de acordo com o sinal correto. Na fatura de cartão, compra é despesa (negativo na nossa UI).
+    // Se o valor for positivo e a linha não parecer um crédito/pagamento, invertemos para negativo.
+    const isCredit = description.toLowerCase().includes('pagamento') || 
+                     description.toLowerCase().includes('recebido') || 
+                     description.toLowerCase().includes('estorno') || 
+                     description.toLowerCase().includes('crédito');
+    if (amount > 0 && !isCredit) {
+      amount = -amount;
+    }
+    
+    let category = 'Outros';
+    const descLower = description.toLowerCase();
+    if (descLower.includes('mercado') || descLower.includes('pao de acucar') || descLower.includes('carrefour') || descLower.includes('super')) {
+      category = 'Alimentação';
+    } else if (descLower.includes('uber') || descLower.includes('99') || descLower.includes('posto') || descLower.includes('combustivel')) {
+      category = 'Transporte';
+    } else if (descLower.includes('netflix') || descLower.includes('spotify') || descLower.includes('cinema') || descLower.includes('lazer')) {
+      category = 'Lazer';
+    } else if (descLower.includes('farmacia') || descLower.includes('drogaria') || descLower.includes('hospital') || descLower.includes('saude')) {
+      category = 'Saúde';
+    } else if (descLower.includes('aluguel') || descLower.includes('condominio') || descLower.includes('luz') || descLower.includes('agua')) {
+      category = 'Moradia';
+    } else if (descLower.includes('salario') || descLower.includes('remuneracao') || descLower.includes('recebido')) {
+      category = 'Salário';
+    }
+
+    transactions.push({
+      user_id: userId,
+      account_id: accountId,
+      statement_id: statementId,
+      date: dateStr,
+      description: description,
+      amount: amount,
+      type: amount < 0 ? 'debit' : 'credit',
+      category: category,
+      merchant: description,
+      raw_description: line,
+      category_confirmed: false
+    });
+  }
+  
   return transactions;
 }
 
