@@ -21,6 +21,7 @@ import CheckCircle from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import type { PageType } from '../types';
 import { supabase } from '../supabaseClient';
+import { parseNubankCSV, parseNubankPDFText } from '../parsers/nubank';
 
 interface Account {
   id: string;
@@ -183,241 +184,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     return transactions;
   };
 
-  const parseTextLocal = (text: string): any[] => {
-    const transactions: any[] = [];
-    const lines = text.split(/\r?\n/);
-    
-    const monthsMap: Record<string, number> = {
-      'jan': 0, 'feb': 1, 'fev': 1, 'mar': 2, 'apr': 3, 'abr': 3, 'may': 4, 'mai': 4, 'jun': 5,
-      'jul': 6, 'aug': 7, 'ago': 7, 'sep': 8, 'set': 8, 'oct': 9, 'out': 9, 'nov': 10, 'dec': 11, 'dez': 11
-    };
-    
-    const currentYear = new Date().getFullYear();
-    
-    for (let line of lines) {
-      line = line.trim();
-      if (!line) continue;
-      
-      const amountRegex = /(?:R\$\s*)?(-?\s*\d{1,3}(?:\.\d{3})*,\d{2}|-?\s*\d+,\d{2}|-?\s*\d{1,3}(?:\,\d{3})*\.\d{2}|-?\s*\d+\.\d{2})\b/;
-      const amountMatch = line.match(amountRegex);
-      if (!amountMatch) continue;
-      
-      const rawAmountStr = amountMatch[1];
-      let amount = parseNumericValue(rawAmountStr);
-      
-      let dateStr = new Date().toISOString().split('T')[0];
-      let dateMatch = line.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/) || 
-                      line.match(/\b(\d{1,2})\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/i);
-      
-      if (dateMatch) {
-        if (dateMatch[2] && isNaN(Number(dateMatch[2]))) {
-          const day = parseInt(dateMatch[1]);
-          const monthStr = dateMatch[2].toLowerCase();
-          const month = monthsMap[monthStr] ?? 0;
-          const d = new Date(currentYear, month, day);
-          dateStr = d.toISOString().split('T')[0];
-        } else {
-          const day = parseInt(dateMatch[1]);
-          const month = parseInt(dateMatch[2]) - 1;
-          const year = dateMatch[3] ? (dateMatch[3].length === 2 ? 2000 + parseInt(dateMatch[3]) : parseInt(dateMatch[3])) : currentYear;
-          const d = new Date(year, month, day);
-          dateStr = d.toISOString().split('T')[0];
-        }
-      }
-      
-      let description = line
-        .replace(amountRegex, '')
-        .replace(/\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/g, '')
-        .replace(/\b\d{1,2}\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/ig, '')
-        .replace(/[\-\+R\$]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
 
-      // Limpeza de ruído de extrato brasileiro
-      description = description
-        .replace(/compra\s+no\s+estabelecimento\s+/i, '')
-        .replace(/compra\s+de\s+/i, '')
-        .replace(/no\s+cartão\s+de\s+crédito\s*/i, '')
-        .replace(/transferência\s+enviada\s+pelo\s+pix\s*\-?\s*/i, '')
-        .replace(/transferência\s+recebida\s+pelo\s+pix\s*\-?\s*/i, '')
-        .replace(/transferência\s+enviada\s*\-?\s*/i, '')
-        .replace(/transferência\s+recebida\s*\-?\s*/i, '')
-        .replace(/pagamento\s+de\s+fatura\s*/i, 'Pagamento Fatura ')
-        .replace(/pagamento\s+efetuado\s*/i, 'Pagamento ')
-        .replace(/pix\s+enviado\s*\-?\s*/i, '')
-        .replace(/pix\s+recebido\s*\-?\s*/i, '')
-        .replace(/ted\s+enviada\s*\-?\s*/i, '')
-        .replace(/ted\s+recebida\s*\-?\s*/i, '')
-        .replace(/doc\s+enviado\s*\-?\s*/i, '')
-        .replace(/doc\s+recebido\s*\-?\s*/i, '')
-        .replace(/no\s+valor\s+de\s+.*$/i, '') // Remove o "no valor de..." até o final da linha
-        .replace(/\s+/g, ' ')
-        .trim();
-        
-      if (description) {
-        description = description.charAt(0).toUpperCase() + description.slice(1);
-      }
-
-      if (description.length < 2) {
-        description = "Transação PDF";
-      }
-      
-      const isCredit = description.toLowerCase().includes('pagamento') || 
-                       description.toLowerCase().includes('recebido') || 
-                       description.toLowerCase().includes('estorno') || 
-                       description.toLowerCase().includes('crédito');
-      if (amount > 0 && !isCredit) {
-        amount = -amount;
-      }
-      
-      let category = 'Outros';
-      const descLower = description.toLowerCase();
-      if (descLower.includes('mercado') || descLower.includes('pao de acucar') || descLower.includes('carrefour') || descLower.includes('super')) {
-        category = 'Alimentação';
-      } else if (descLower.includes('uber') || descLower.includes('99') || descLower.includes('posto') || descLower.includes('combustivel')) {
-        category = 'Transporte';
-      } else if (descLower.includes('netflix') || descLower.includes('spotify') || descLower.includes('cinema') || descLower.includes('lazer')) {
-        category = 'Lazer';
-      } else if (descLower.includes('farmacia') || descLower.includes('drogaria') || descLower.includes('hospital') || descLower.includes('saude')) {
-        category = 'Saúde';
-      } else if (descLower.includes('aluguel') || descLower.includes('condominio') || descLower.includes('luz') || descLower.includes('agua')) {
-        category = 'Moradia';
-      } else if (descLower.includes('salario') || descLower.includes('remuneracao') || descLower.includes('recebido')) {
-        category = 'Salário';
-      }
-
-      transactions.push({
-        date: dateStr,
-        description: description,
-        amount: amount,
-        type: amount < 0 ? 'debit' : 'credit',
-        category: category,
-        merchant: description,
-        raw_description: line,
-        category_confirmed: false
-      });
-    }
-    
-    return transactions;
-  };
-
-  const parseCSVString = (csvText: string): any[] => {
-    const transactions: any[] = [];
-    const lines = csvText.split(/\r?\n/);
-    if (lines.length < 2) return [];
-    
-    // Identificar cabeçalho e delimitador
-    const header = lines[0].toLowerCase();
-    let delimiter = ',';
-    if (header.includes(';')) {
-      delimiter = ';';
-    }
-    
-    const headers = header.split(delimiter).map(h => h.trim());
-    
-    // Mapeamento de colunas comuns
-    const dateIdx = headers.findIndex(h => h.includes('data') || h.includes('date'));
-    const categoryIdx = headers.findIndex(h => h.includes('cat') || h.includes('type'));
-    const descIdx = headers.findIndex(h => h.includes('tit') || h.includes('desc') || h.includes('memo'));
-    const amountIdx = headers.findIndex(h => h.includes('val') || h.includes('amount'));
-
-    // Se não encontrou as colunas básicas de data e valor, tenta usar o parser de texto genérico
-    if (dateIdx === -1 || amountIdx === -1) {
-      console.log("CSV sem cabeçalho padrão. Usando parser de texto genérico...");
-      return parseTextLocal(csvText);
-    }
-
-    for (let i = 1; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      
-      // Tratar aspas no CSV
-      const columns = line.split(delimiter).map(col => col.replace(/^["']|["']$/g, '').trim());
-      if (columns.length <= Math.max(dateIdx, amountIdx)) continue;
-      
-      const rawDate = columns[dateIdx];
-      const rawDesc = descIdx !== -1 ? columns[descIdx] : 'Transação CSV';
-      const rawCat = categoryIdx !== -1 ? columns[categoryIdx] : 'Outros';
-      const rawAmount = columns[amountIdx];
-      
-      if (!rawDate || !rawAmount) continue;
-
-      // Parsear data (pode vir como YYYY-MM-DD ou DD/MM/YYYY)
-      let dateStr = new Date().toISOString().split('T')[0];
-      if (rawDate.includes('-')) {
-        dateStr = rawDate; // Provavelmente YYYY-MM-DD
-      } else if (rawDate.includes('/')) {
-        const parts = rawDate.split('/');
-        if (parts.length === 3) {
-          const day = parts[0].padStart(2, '0');
-          const month = parts[1].padStart(2, '0');
-          const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
-          dateStr = `${year}-${month}-${day}`;
-        }
-      }
-      
-      // Parsear valor
-      let amount = parseNumericValue(rawAmount);
-      
-      // Limpar descrição
-      let description = rawDesc;
-      description = description
-        .replace(/compra\s+no\s+estabelecimento\s+/i, '')
-        .replace(/compra\s+de\s+/i, '')
-        .replace(/no\s+cartão\s+de\s+crédito\s*/i, '')
-        .replace(/transferência\s+enviada\s+pelo\s+pix\s*\-?\s*/i, '')
-        .replace(/transferência\s+recebida\s+pelo\s+pix\s*\-?\s*/i, '')
-        .replace(/transferência\s+enviada\s*\-?\s*/i, '')
-        .replace(/transferência\s+recebida\s*\-?\s*/i, '')
-        .replace(/pagamento\s+de\s+fatura\s*/i, 'Pagamento Fatura ')
-        .replace(/pagamento\s+efetuado\s*/i, 'Pagamento ')
-        .replace(/pix\s+enviado\s*\-?\s*/i, '')
-        .replace(/pix\s+recebido\s*\-?\s*/i, '')
-        .replace(/ted\s+enviada\s*\-?\s*/i, '')
-        .replace(/ted\s+recebida\s*\-?\s*/i, '')
-        .replace(/doc\s+enviado\s*\-?\s*/i, '')
-        .replace(/doc\s+recebido\s*\-?\s*/i, '')
-        .replace(/no\s+valor\s+de\s+.*$/i, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-        
-      if (description) {
-        description = description.charAt(0).toUpperCase() + description.slice(1);
-      }
-
-      // Mapear categoria para as permitidas
-      let category = 'Outros';
-      const catLower = rawCat.toLowerCase();
-      const descLower = description.toLowerCase();
-      
-      if (catLower.includes('ali') || catLower.includes('mercado') || catLower.includes('restaurante') || descLower.includes('mercado') || descLower.includes('carrefour') || descLower.includes('pao de acucar')) {
-        category = 'Alimentação';
-      } else if (catLower.includes('trans') || catLower.includes('uber') || catLower.includes('combustivel') || descLower.includes('uber') || descLower.includes('99') || descLower.includes('posto')) {
-        category = 'Transporte';
-      } else if (catLower.includes('laz') || catLower.includes('diversao') || descLower.includes('netflix') || descLower.includes('spotify') || descLower.includes('lazer')) {
-        category = 'Lazer';
-      } else if (catLower.includes('sau') || catLower.includes('medico') || catLower.includes('farma') || descLower.includes('farmacia') || descLower.includes('drogaria')) {
-        category = 'Saúde';
-      } else if (catLower.includes('mor') || catLower.includes('aluguel') || catLower.includes('casa') || descLower.includes('condominio') || descLower.includes('luz') || descLower.includes('agua')) {
-        category = 'Moradia';
-      } else if (catLower.includes('sal') || catLower.includes('rend') || descLower.includes('salario') || descLower.includes('remuneracao')) {
-        category = 'Salário';
-      }
-      
-      transactions.push({
-        date: dateStr,
-        description: description,
-        amount: amount,
-        type: amount < 0 ? 'debit' : 'credit',
-        category: category,
-        merchant: description,
-        raw_description: line,
-        category_confirmed: false
-      });
-    }
-    
-    return transactions;
-  };
 
   const extractTextFromPDF = async (pdfFile: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -552,9 +319,10 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         }
       } else if (fileExtension === 'csv') {
         try {
-          setStatusMessage({ type: 'info', text: 'Processando arquivo CSV localmente...' });
+          setStatusMessage({ type: 'info', text: 'Processando arquivo CSV do Nubank...' });
           const text = await file.text();
-          const parsed = parseCSVString(text);
+          const currentUserName = userData.user?.user_metadata?.full_name || 'André Luís Augusto Avancini';
+          const parsed = parseNubankCSV(text, userId, selectedAccount, statement.id, currentUserName);
           localTransactions = parsed.map(tx => ({
             ...tx,
             user_id: userId,
@@ -563,12 +331,13 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
           }));
           parsedLocally = true;
         } catch (csvErr) {
-          console.error('Erro ao parsear CSV localmente:', csvErr);
+          console.error('Erro ao parsear CSV do Nubank:', csvErr);
         }
       } else if (fileExtension === 'pdf' && pdfText) {
         try {
-          setStatusMessage({ type: 'info', text: 'Processando texto do PDF localmente...' });
-          const parsed = parseTextLocal(pdfText);
+          setStatusMessage({ type: 'info', text: 'Processando extrato PDF do Nubank...' });
+          const currentUserName = userData.user?.user_metadata?.full_name || 'André Luís Augusto Avancini';
+          const parsed = parseNubankPDFText(pdfText, userId, selectedAccount, statement.id, currentUserName);
           localTransactions = parsed.map(tx => ({
             ...tx,
             user_id: userId,
@@ -577,7 +346,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
           }));
           parsedLocally = true;
         } catch (pdfLocalErr) {
-          console.error('Erro ao parsear PDF localmente:', pdfLocalErr);
+          console.error('Erro ao parsear PDF do Nubank localmente:', pdfLocalErr);
         }
       }
 

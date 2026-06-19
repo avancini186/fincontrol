@@ -18,7 +18,8 @@ import {
   TextField, 
   CircularProgress,
   Checkbox,
-  Tooltip
+  Tooltip,
+  Chip
 } from '@mui/material';
 import { 
   Check, 
@@ -38,6 +39,8 @@ interface Transaction {
   category: string;
   merchant: string;
   raw_description: string;
+  payee?: string | null;
+  institution?: string | null;
 }
 
 interface Category {
@@ -106,6 +109,9 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
           description: tx.description,
           amount: tx.amount,
           category: tx.category,
+          payee: tx.payee,
+          institution: tx.institution,
+          type: tx.type,
           category_confirmed: true
         })
         .eq('id', id);
@@ -149,6 +155,9 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
             description: tx.description,
             amount: tx.amount,
             category: tx.category,
+            payee: tx.payee,
+            institution: tx.institution,
+            type: tx.type,
             category_confirmed: true
           })
           .eq('id', id);
@@ -235,7 +244,9 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
                   />
                 </TableCell>
                 <TableCell sx={{ fontWeight: 'bold', py: 1.5 }}>Data</TableCell>
-                <TableCell sx={{ fontWeight: 'bold' }}>Descrição Original</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Tipo</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Pessoa/Favorecido</TableCell>
+                <TableCell sx={{ fontWeight: 'bold' }}>Banco/Instituição</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Descrição na UI</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Categoria Sugerida</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', textAlign: 'right' }}>Valor (R$)</TableCell>
@@ -246,6 +257,27 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
               {transactions.map((tx) => {
                 const isSelected = selectedIds.includes(tx.id);
                 const isExpense = tx.amount < 0;
+                
+                // Helper para obter representação amigável do Tipo
+                const getReadableType = (typeStr: string) => {
+                  switch (typeStr) {
+                    case 'PIX_ENVIADO': return { label: 'Pix Enviado', color: 'error' as const };
+                    case 'PIX_RECEBIDO': return { label: 'Pix Recebido', color: 'success' as const };
+                    case 'APLICACAO_RDB': return { label: 'Aplicação RDB', color: 'warning' as const };
+                    case 'RESGATE_RDB': return { label: 'Resgate RDB', color: 'success' as const };
+                    case 'PAGAMENTO_BOLETO': return { label: 'Boleto', color: 'default' as const };
+                    case 'CREDITO_CONTA': return { label: 'Crédito', color: 'success' as const };
+                    case 'RENDIMENTOS': return { label: 'Rendimento', color: 'success' as const };
+                    case 'TED_ENVIADA': return { label: 'TED Enviada', color: 'error' as const };
+                    case 'TED_RECEBIDA': return { label: 'TED Recebida', color: 'success' as const };
+                    case 'COMPRA': return { label: 'Compra', color: 'default' as const };
+                    case 'transfer': return { label: 'Transferência', color: 'info' as const };
+                    default: return { label: typeStr || 'Débito/Crédito', color: 'default' as const };
+                  }
+                };
+
+                const typeInfo = getReadableType(tx.type);
+
                 return (
                   <TableRow 
                     key={tx.id} 
@@ -272,10 +304,28 @@ export default function ReviewPage({ onNavigate }: ReviewPageProps) {
                       />
                     </TableCell>
 
-                    {/* Descrição Original (Apenas leitura) */}
-                    <TableCell sx={{ color: 'text.secondary', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      <Tooltip title={tx.raw_description || ''}>
-                        <span>{tx.raw_description || '-'}</span>
+                    {/* Tipo */}
+                    <TableCell sx={{ py: 1 }}>
+                      <Chip 
+                        label={typeInfo.label} 
+                        color={typeInfo.color} 
+                        size="small" 
+                        variant="outlined" 
+                        sx={{ fontWeight: 'bold' }} 
+                      />
+                    </TableCell>
+
+                    {/* Pessoa/Favorecido (Apenas leitura) */}
+                    <TableCell sx={{ color: 'text.secondary', maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Tooltip title={tx.payee || tx.merchant || ''}>
+                        <span>{tx.payee || tx.merchant || '-'}</span>
+                      </Tooltip>
+                    </TableCell>
+
+                    {/* Banco/Instituição (Apenas leitura) */}
+                    <TableCell sx={{ color: 'text.secondary', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <Tooltip title={tx.institution || ''}>
+                        <span>{tx.institution || '-'}</span>
                       </Tooltip>
                     </TableCell>
 
