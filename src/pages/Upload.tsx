@@ -119,7 +119,6 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         return match ? match[1].trim() : '';
       };
 
-      const trntype = getTagValue('TRNTYPE');
       const dtposted = getTagValue('DTPOSTED');
       const trnamt = getTagValue('TRNAMT');
       const memo = getTagValue('MEMO') || getTagValue('NAME') || 'Transação OFX';
