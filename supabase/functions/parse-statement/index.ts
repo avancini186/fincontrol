@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.38.4";
+import pdf from "npm:pdf-parse/lib/pdf-parse.js";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,12 +76,22 @@ serve(async (req) => {
         const mimeType = fileType === "png" ? "image/png" : "image/jpeg";
         transactions = await parseImageWithOpenAI(base64Data, mimeType, openaiApiKey, statement.account_id, statement.user_id, statementId);
       } else if (fileType === "pdf") {
-        // Para PDFs no Deno, tentamos extrair o texto básico ou fazemos mock se for um escaneamento
-        const text = await fileBlob.text();
-        if (text && text.trim().length > 100) {
-          transactions = await parseTextWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
-        } else {
-          console.warn("PDF parece conter apenas imagens ou o texto está inacessível. Usando mock...");
+        // Extrair texto real do PDF
+        try {
+          const arrayBuffer = await fileBlob.arrayBuffer();
+          const pdfData = await pdf(new Uint8Array(arrayBuffer));
+          const text = pdfData.text;
+          
+          if (text && text.trim().length > 100) {
+            console.log(`Texto do PDF extraído com sucesso (${text.length} caracteres). Enviando para OpenAI...`);
+            transactions = await parseTextWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
+          } else {
+            console.warn("Nenhum texto extraído do PDF. Usando mock...");
+            transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
+          }
+        } catch (pdfErr: any) {
+          console.error("Erro ao parsear PDF com pdf-parse:", pdfErr);
+          // Fallback para mock se falhar o parsing do PDF
           transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
         }
       }
