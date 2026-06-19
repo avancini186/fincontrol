@@ -49,17 +49,23 @@ serve(async (req) => {
       throw new Error(`Falha ao baixar arquivo do Storage: ${downloadErr?.message}`);
     }
 
+    const fileType = statement.file_type;
     const openaiApiKey = Deno.env.get("OPENAI_API_KEY");
     let transactions: any[] = [];
 
-    // Se não tiver API Key, usar fallback/mock
-    if (!openaiApiKey) {
+    if (fileType === "ofx") {
+      const text = await fileBlob.text();
+      if (!openaiApiKey) {
+        console.warn("OPENAI_API_KEY não configurada. Parseando OFX localmente...");
+        transactions = parseOFXLocal(text, statement.account_id, statement.user_id, statementId);
+      } else {
+        transactions = await parseOFXWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
+      }
+    } else if (!openaiApiKey) {
       console.warn("OPENAI_API_KEY não configurada. Simulando transações...");
       transactions = getMockTransactions(statement.account_id, statement.user_id, statementId);
     } else {
       // 3. Processar conforme tipo de arquivo
-      const fileType = statement.file_type;
-      
       if (fileType === "csv") {
         const text = await fileBlob.text();
         transactions = await parseCSVWithOpenAI(text, openaiApiKey, statement.account_id, statement.user_id, statementId);
@@ -133,6 +139,81 @@ Retorne EXCLUSIVAMENTE um array JSON de objetos contendo os seguintes campos:
 
 Não inclua explicações, tags de código ou textos fora do array JSON. Exemplo de retorno:
 [{"date":"2026-06-18","description":"Netflix","amount":-55.90,"type":"debit","category":"Lazer","merchant":"Netflix","raw_description":"NETFLIX.COM"}]`;
+
+async function parseOFXWithOpenAI(ofxText: string, apiKey: string, accountId: string, userId: string, statementId: string): Promise<any[]> {
+  return await callOpenAI(
+    apiKey,
+    "gpt-4o-mini",
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Aqui está o texto bruto do arquivo OFX (Open Financial Exchange):\n\n${ofxText}` }
+    ],
+    accountId,
+    userId,
+    statementId
+  );
+}
+
+function parseOFXLocal(ofxText: string, accountId: string, userId: string, statementId: string): any[] {
+  const transactions: any[] = [];
+  const blocks = ofxText.split(/<STMTTRN>/i);
+  
+  for (let i = 1; i < blocks.length; i++) {
+    const block = blocks[i].split(/<\/STMTTRN>/i)[0];
+    
+    const getTagValue = (tag: string): string => {
+      const regex = new RegExp(`<${tag}>([^<\\r\\n]+)`, 'i');
+      const match = block.match(regex);
+      return match ? match[1].trim() : '';
+    };
+
+    const trntype = getTagValue('TRNTYPE');
+    const dtposted = getTagValue('DTPOSTED');
+    const trnamt = getTagValue('TRNAMT');
+    const memo = getTagValue('MEMO') || getTagValue('NAME') || 'Transação OFX';
+    
+    let dateStr = new Date().toISOString().split('T')[0];
+    if (dtposted && dtposted.length >= 8) {
+      const year = dtposted.substring(0, 4);
+      const month = dtposted.substring(4, 6);
+      const day = dtposted.substring(6, 8);
+      dateStr = `${year}-${month}-${day}`;
+    }
+
+    const amount = parseFloat(trnamt.replace(',', '.')) || 0;
+    
+    let category = 'Outros';
+    const memoLower = memo.toLowerCase();
+    if (memoLower.includes('mercado') || memoLower.includes('pao de acucar') || memoLower.includes('carrefour') || memoLower.includes('super')) {
+      category = 'Alimentação';
+    } else if (memoLower.includes('uber') || memoLower.includes('99') || memoLower.includes('posto') || memoLower.includes('combustivel')) {
+      category = 'Transporte';
+    } else if (memoLower.includes('netflix') || memoLower.includes('spotify') || memoLower.includes('cinema') || memoLower.includes('lazer')) {
+      category = 'Lazer';
+    } else if (memoLower.includes('farmacia') || memoLower.includes('drogaria') || memoLower.includes('hospital') || memoLower.includes('saude')) {
+      category = 'Saúde';
+    } else if (memoLower.includes('aluguel') || memoLower.includes('condominio') || memoLower.includes('luz') || memoLower.includes('agua')) {
+      category = 'Moradia';
+    } else if (memoLower.includes('salario') || memoLower.includes('remuneracao') || memoLower.includes('recebido')) {
+      category = 'Salário';
+    }
+
+    transactions.push({
+      user_id: userId,
+      account_id: accountId,
+      statement_id: statementId,
+      date: dateStr,
+      description: memo,
+      amount: amount,
+      type: amount < 0 ? 'debit' : 'credit',
+      category: category,
+      merchant: memo,
+      raw_description: memo,
+      category_confirmed: false
+    });
+  }
+  return transactions;
+}
 
 async function parseCSVWithOpenAI(csvText: string, apiKey: string, accountId: string, userId: string, statementId: string): Promise<any[]> {
   return await callOpenAI(

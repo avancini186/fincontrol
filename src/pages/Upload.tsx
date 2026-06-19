@@ -70,7 +70,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         // Tenta criar o bucket (requer que as permissões estejam corretas ou ignora falha silenciosamente se já criado)
         await supabase.storage.createBucket('statements', {
           public: false,
-          allowedMimeTypes: ['text/csv', 'application/pdf', 'image/jpeg', 'image/png'],
+          allowedMimeTypes: ['text/csv', 'application/pdf', 'image/jpeg', 'image/png', 'text/plain', 'application/x-ofx'],
           fileSizeLimit: 10485760 // 10MB
         });
       }
@@ -106,13 +106,71 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     }
   };
 
+  const parseOFXString = (ofxText: string): any[] => {
+    const transactions: any[] = [];
+    const blocks = ofxText.split(/<STMTTRN>/i);
+    
+    for (let i = 1; i < blocks.length; i++) {
+      const block = blocks[i].split(/<\/STMTTRN>/i)[0];
+      
+      const getTagValue = (tag: string): string => {
+        const regex = new RegExp(`<${tag}>([^<\\r\\n]+)`, 'i');
+        const match = block.match(regex);
+        return match ? match[1].trim() : '';
+      };
+
+      const trntype = getTagValue('TRNTYPE');
+      const dtposted = getTagValue('DTPOSTED');
+      const trnamt = getTagValue('TRNAMT');
+      const memo = getTagValue('MEMO') || getTagValue('NAME') || 'Transação OFX';
+      
+      let dateStr = new Date().toISOString().split('T')[0];
+      if (dtposted && dtposted.length >= 8) {
+        const year = dtposted.substring(0, 4);
+        const month = dtposted.substring(4, 6);
+        const day = dtposted.substring(6, 8);
+        dateStr = `${year}-${month}-${day}`;
+      }
+
+      const amount = parseFloat(trnamt.replace(',', '.')) || 0;
+      
+      let category = 'Outros';
+      const memoLower = memo.toLowerCase();
+      if (memoLower.includes('mercado') || memoLower.includes('pao de acucar') || memoLower.includes('carrefour') || memoLower.includes('super')) {
+        category = 'Alimentação';
+      } else if (memoLower.includes('uber') || memoLower.includes('99') || memoLower.includes('posto') || memoLower.includes('combustivel')) {
+        category = 'Transporte';
+      } else if (memoLower.includes('netflix') || memoLower.includes('spotify') || memoLower.includes('cinema') || memoLower.includes('lazer')) {
+        category = 'Lazer';
+      } else if (memoLower.includes('farmacia') || memoLower.includes('drogaria') || memoLower.includes('hospital') || memoLower.includes('saude')) {
+        category = 'Saúde';
+      } else if (memoLower.includes('aluguel') || memoLower.includes('condominio') || memoLower.includes('luz') || memoLower.includes('agua')) {
+        category = 'Moradia';
+      } else if (memoLower.includes('salario') || memoLower.includes('remuneracao') || memoLower.includes('recebido')) {
+        category = 'Salário';
+      }
+
+      transactions.push({
+        date: dateStr,
+        description: memo,
+        amount: amount,
+        type: amount < 0 ? 'debit' : 'credit',
+        category: category,
+        merchant: memo,
+        raw_description: memo,
+        category_confirmed: false
+      });
+    }
+    return transactions;
+  };
+
   const validateAndSetFile = (selectedFile: File) => {
     setStatusMessage(null);
-    const validExtensions = ['csv', 'pdf', 'jpg', 'jpeg', 'png'];
+    const validExtensions = ['csv', 'pdf', 'jpg', 'jpeg', 'png', 'ofx'];
     const extension = selectedFile.name.split('.').pop()?.toLowerCase() || '';
 
     if (!validExtensions.includes(extension)) {
-      setStatusMessage({ type: 'error', text: 'Formato inválido. Selecione apenas arquivos CSV, PDF, JPG ou PNG.' });
+      setStatusMessage({ type: 'error', text: 'Formato inválido. Selecione apenas arquivos CSV, PDF, JPG, PNG ou OFX.' });
       setFile(null);
       return;
     }
@@ -184,50 +242,68 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         // Simulando resposta local bem sucedida do processamento
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Vamos mockar as transações inserindo-as diretamente no banco para que o usuário veja dados na tela de revisão!
-        const mockTransactions = [
-          {
-            user_id: userId,
-            account_id: selectedAccount,
-            statement_id: statement.id,
-            date: new Date().toISOString().split('T')[0],
-            description: 'Supermercado Pão de Açúcar',
-            amount: -184.50,
-            type: 'debit',
-            category: 'Alimentação',
-            merchant: 'Pão de Açúcar',
-            category_confirmed: false,
-            raw_description: 'PAO DE ACUCAR LJ 12'
-          },
-          {
-            user_id: userId,
-            account_id: selectedAccount,
-            statement_id: statement.id,
-            date: new Date().toISOString().split('T')[0],
-            description: 'Posto Ipiranga Combustível',
-            amount: -80.00,
-            type: 'debit',
-            category: 'Transporte',
-            merchant: 'Posto Ipiranga',
-            category_confirmed: false,
-            raw_description: 'POSTO IPIRANGA JACAREI'
-          },
-          {
-            user_id: userId,
-            account_id: selectedAccount,
-            statement_id: statement.id,
-            date: new Date().toISOString().split('T')[0],
-            description: 'Netflix Mensalidade',
-            amount: -55.90,
-            type: 'debit',
-            category: 'Lazer',
-            merchant: 'Netflix',
-            category_confirmed: false,
-            raw_description: 'NETFLIX.COM'
+        let localTransactions: any[] = [];
+        
+        if (fileExtension === 'ofx') {
+          try {
+            const text = await file.text();
+            const parsed = parseOFXString(text);
+            localTransactions = parsed.map(tx => ({
+              ...tx,
+              user_id: userId,
+              account_id: selectedAccount,
+              statement_id: statement.id
+            }));
+          } catch (ofxErr) {
+            console.error('Erro ao parsear OFX localmente:', ofxErr);
           }
-        ];
+        }
+        
+        if (localTransactions.length === 0) {
+          localTransactions = [
+            {
+              user_id: userId,
+              account_id: selectedAccount,
+              statement_id: statement.id,
+              date: new Date().toISOString().split('T')[0],
+              description: 'Supermercado Pão de Açúcar',
+              amount: -184.50,
+              type: 'debit',
+              category: 'Alimentação',
+              merchant: 'Pão de Açúcar',
+              category_confirmed: false,
+              raw_description: 'PAO DE ACUCAR LJ 12'
+            },
+            {
+              user_id: userId,
+              account_id: selectedAccount,
+              statement_id: statement.id,
+              date: new Date().toISOString().split('T')[0],
+              description: 'Posto Ipiranga Combustível',
+              amount: -80.00,
+              type: 'debit',
+              category: 'Transporte',
+              merchant: 'Posto Ipiranga',
+              category_confirmed: false,
+              raw_description: 'POSTO IPIRANGA JACAREI'
+            },
+            {
+              user_id: userId,
+              account_id: selectedAccount,
+              statement_id: statement.id,
+              date: new Date().toISOString().split('T')[0],
+              description: 'Netflix Mensalidade',
+              amount: -55.90,
+              type: 'debit',
+              category: 'Lazer',
+              merchant: 'Netflix',
+              category_confirmed: false,
+              raw_description: 'NETFLIX.COM'
+            }
+          ];
+        }
 
-        await supabase.from('transactions').insert(mockTransactions);
+        await supabase.from('transactions').insert(localTransactions);
         await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
       }
 
@@ -250,7 +326,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     <Box sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
       <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>Importar Extrato ou Fatura</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-        Faça o upload do seu extrato bancário ou fatura nos formatos CSV, PDF, JPG ou PNG para processamento automático.
+        Faça o upload do seu extrato bancário ou fatura nos formatos CSV, PDF, JPG, PNG ou OFX para processamento automático.
       </Typography>
 
       {loadingAccounts ? (
@@ -309,14 +385,14 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
                 type="file"
                 style={{ display: 'none' }}
                 onChange={handleFileInput}
-                accept=".csv,.pdf,.jpg,.jpeg,.png"
+                accept=".csv,.pdf,.jpg,.jpeg,.png,.ofx"
               />
               <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                 Arraste seu extrato aqui ou clique para selecionar
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                Formatos aceitos: CSV, PDF, JPG ou PNG (Max 10MB)
+                Formatos aceitos: CSV, PDF, JPG, PNG ou OFX (Max 10MB)
               </Typography>
             </Box>
 
