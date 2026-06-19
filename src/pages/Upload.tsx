@@ -207,12 +207,37 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
       
       let description = line
         .replace(amountRegex, '')
-        .replace(/\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/, '')
-        .replace(/\b\d{1,2}\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/i, '')
+        .replace(/\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/g, '')
+        .replace(/\b\d{1,2}\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/ig, '')
         .replace(/[\-\+R\$]/g, '')
         .replace(/\s+/g, ' ')
         .trim();
+
+      // Limpeza de ruído de extrato brasileiro
+      description = description
+        .replace(/compra\s+no\s+estabelecimento\s+/i, '')
+        .replace(/compra\s+de\s+/i, '')
+        .replace(/no\s+cartão\s+de\s+crédito\s*/i, '')
+        .replace(/transferência\s+enviada\s+pelo\s+pix\s*\-?\s*/i, '')
+        .replace(/transferência\s+recebida\s+pelo\s+pix\s*\-?\s*/i, '')
+        .replace(/transferência\s+enviada\s*\-?\s*/i, '')
+        .replace(/transferência\s+recebida\s*\-?\s*/i, '')
+        .replace(/pagamento\s+de\s+fatura\s*/i, 'Pagamento Fatura ')
+        .replace(/pagamento\s+efetuado\s*/i, 'Pagamento ')
+        .replace(/pix\s+enviado\s*\-?\s*/i, '')
+        .replace(/pix\s+recebido\s*\-?\s*/i, '')
+        .replace(/ted\s+enviada\s*\-?\s*/i, '')
+        .replace(/ted\s+recebida\s*\-?\s*/i, '')
+        .replace(/doc\s+enviado\s*\-?\s*/i, '')
+        .replace(/doc\s+recebido\s*\-?\s*/i, '')
+        .replace(/no\s+valor\s+de\s+.*$/i, '') // Remove o "no valor de..." até o final da linha
+        .replace(/\s+/g, ' ')
+        .trim();
         
+      if (description) {
+        description = description.charAt(0).toUpperCase() + description.slice(1);
+      }
+
       if (description.length < 2) {
         description = "Transação PDF";
       }
