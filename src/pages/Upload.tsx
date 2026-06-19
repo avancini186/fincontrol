@@ -281,6 +281,124 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     return transactions;
   };
 
+  const parseCSVString = (csvText: string): any[] => {
+    const transactions: any[] = [];
+    const lines = csvText.split(/\r?\n/);
+    if (lines.length < 2) return [];
+    
+    // Identificar cabeçalho e delimitador
+    const header = lines[0].toLowerCase();
+    let delimiter = ',';
+    if (header.includes(';')) {
+      delimiter = ';';
+    }
+    
+    const headers = header.split(delimiter).map(h => h.trim());
+    
+    // Mapeamento de colunas comuns
+    const dateIdx = headers.findIndex(h => h.includes('data') || h.includes('date'));
+    const categoryIdx = headers.findIndex(h => h.includes('cat') || h.includes('type'));
+    const descIdx = headers.findIndex(h => h.includes('tit') || h.includes('desc') || h.includes('memo'));
+    const amountIdx = headers.findIndex(h => h.includes('val') || h.includes('amount'));
+
+    // Se não encontrou as colunas básicas de data e valor, tenta usar o parser de texto genérico
+    if (dateIdx === -1 || amountIdx === -1) {
+      console.log("CSV sem cabeçalho padrão. Usando parser de texto genérico...");
+      return parseTextLocal(csvText);
+    }
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // Tratar aspas no CSV
+      const columns = line.split(delimiter).map(col => col.replace(/^["']|["']$/g, '').trim());
+      if (columns.length <= Math.max(dateIdx, amountIdx)) continue;
+      
+      const rawDate = columns[dateIdx];
+      const rawDesc = descIdx !== -1 ? columns[descIdx] : 'Transação CSV';
+      const rawCat = categoryIdx !== -1 ? columns[categoryIdx] : 'Outros';
+      const rawAmount = columns[amountIdx];
+      
+      if (!rawDate || !rawAmount) continue;
+
+      // Parsear data (pode vir como YYYY-MM-DD ou DD/MM/YYYY)
+      let dateStr = new Date().toISOString().split('T')[0];
+      if (rawDate.includes('-')) {
+        dateStr = rawDate; // Provavelmente YYYY-MM-DD
+      } else if (rawDate.includes('/')) {
+        const parts = rawDate.split('/');
+        if (parts.length === 3) {
+          const day = parts[0].padStart(2, '0');
+          const month = parts[1].padStart(2, '0');
+          const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
+          dateStr = `${year}-${month}-${day}`;
+        }
+      }
+      
+      // Parsear valor
+      let amount = parseFloat(rawAmount.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+      
+      // Limpar descrição
+      let description = rawDesc;
+      description = description
+        .replace(/compra\s+no\s+estabelecimento\s+/i, '')
+        .replace(/compra\s+de\s+/i, '')
+        .replace(/no\s+cartão\s+de\s+crédito\s*/i, '')
+        .replace(/transferência\s+enviada\s+pelo\s+pix\s*\-?\s*/i, '')
+        .replace(/transferência\s+recebida\s+pelo\s+pix\s*\-?\s*/i, '')
+        .replace(/transferência\s+enviada\s*\-?\s*/i, '')
+        .replace(/transferência\s+recebida\s*\-?\s*/i, '')
+        .replace(/pagamento\s+de\s+fatura\s*/i, 'Pagamento Fatura ')
+        .replace(/pagamento\s+efetuado\s*/i, 'Pagamento ')
+        .replace(/pix\s+enviado\s*\-?\s*/i, '')
+        .replace(/pix\s+recebido\s*\-?\s*/i, '')
+        .replace(/ted\s+enviada\s*\-?\s*/i, '')
+        .replace(/ted\s+recebida\s*\-?\s*/i, '')
+        .replace(/doc\s+enviado\s*\-?\s*/i, '')
+        .replace(/doc\s+recebido\s*\-?\s*/i, '')
+        .replace(/no\s+valor\s+de\s+.*$/i, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+        
+      if (description) {
+        description = description.charAt(0).toUpperCase() + description.slice(1);
+      }
+
+      // Mapear categoria para as permitidas
+      let category = 'Outros';
+      const catLower = rawCat.toLowerCase();
+      const descLower = description.toLowerCase();
+      
+      if (catLower.includes('ali') || catLower.includes('mercado') || catLower.includes('restaurante') || descLower.includes('mercado') || descLower.includes('carrefour') || descLower.includes('pao de acucar')) {
+        category = 'Alimentação';
+      } else if (catLower.includes('trans') || catLower.includes('uber') || catLower.includes('combustivel') || descLower.includes('uber') || descLower.includes('99') || descLower.includes('posto')) {
+        category = 'Transporte';
+      } else if (catLower.includes('laz') || catLower.includes('diversao') || descLower.includes('netflix') || descLower.includes('spotify') || descLower.includes('lazer')) {
+        category = 'Lazer';
+      } else if (catLower.includes('sau') || catLower.includes('medico') || catLower.includes('farma') || descLower.includes('farmacia') || descLower.includes('drogaria')) {
+        category = 'Saúde';
+      } else if (catLower.includes('mor') || catLower.includes('aluguel') || catLower.includes('casa') || descLower.includes('condominio') || descLower.includes('luz') || descLower.includes('agua')) {
+        category = 'Moradia';
+      } else if (catLower.includes('sal') || catLower.includes('rend') || descLower.includes('salario') || descLower.includes('remuneracao')) {
+        category = 'Salário';
+      }
+      
+      transactions.push({
+        date: dateStr,
+        description: description,
+        amount: amount,
+        type: amount < 0 ? 'debit' : 'credit',
+        category: category,
+        merchant: description,
+        raw_description: line,
+        category_confirmed: false
+      });
+    }
+    
+    return transactions;
+  };
+
   const extractTextFromPDF = async (pdfFile: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       if (!(window as any).pdfjsLib) {
@@ -411,6 +529,21 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
           parsedLocally = true;
         } catch (ofxErr) {
           console.error('Erro ao parsear OFX localmente:', ofxErr);
+        }
+      } else if (fileExtension === 'csv') {
+        try {
+          setStatusMessage({ type: 'info', text: 'Processando arquivo CSV localmente...' });
+          const text = await file.text();
+          const parsed = parseCSVString(text);
+          localTransactions = parsed.map(tx => ({
+            ...tx,
+            user_id: userId,
+            account_id: selectedAccount,
+            statement_id: statement.id
+          }));
+          parsedLocally = true;
+        } catch (csvErr) {
+          console.error('Erro ao parsear CSV localmente:', csvErr);
         }
       } else if (fileExtension === 'pdf' && pdfText) {
         try {
