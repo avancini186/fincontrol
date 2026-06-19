@@ -32,6 +32,26 @@ interface UploadPageProps {
   onNavigate: (page: PageType) => void;
 }
 
+const parseNumericValue = (val: string): number => {
+  const cleanVal = val.replace(/\s/g, '').trim();
+  
+  if (cleanVal.includes(',') && cleanVal.includes('.')) {
+    const commaPos = cleanVal.indexOf(',');
+    const dotPos = cleanVal.indexOf('.');
+    if (commaPos > dotPos) {
+      return parseFloat(cleanVal.replace(/\./g, '').replace(',', '.')) || 0;
+    } else {
+      return parseFloat(cleanVal.replace(/,/g, '')) || 0;
+    }
+  }
+  
+  if (cleanVal.includes(',')) {
+    return parseFloat(cleanVal.replace(',', '.')) || 0;
+  }
+  
+  return parseFloat(cleanVal) || 0;
+};
+
 export default function UploadPage({ onNavigate }: UploadPageProps) {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [selectedAccount, setSelectedAccount] = useState('');
@@ -131,7 +151,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         dateStr = `${year}-${month}-${day}`;
       }
 
-      const amount = parseFloat(trnamt.replace(',', '.')) || 0;
+      const amount = parseNumericValue(trnamt);
       
       let category = 'Outros';
       const memoLower = memo.toLowerCase();
@@ -183,7 +203,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
       if (!amountMatch) continue;
       
       const rawAmountStr = amountMatch[1];
-      let amount = parseFloat(rawAmountStr.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+      let amount = parseNumericValue(rawAmountStr);
       
       let dateStr = new Date().toISOString().split('T')[0];
       let dateMatch = line.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/) || 
@@ -337,7 +357,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
       }
       
       // Parsear valor
-      let amount = parseFloat(rawAmount.replace(/\s/g, '').replace(/\./g, '').replace(',', '.')) || 0;
+      let amount = parseNumericValue(rawAmount);
       
       // Limpar descrição
       let description = rawDesc;
