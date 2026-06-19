@@ -14,7 +14,8 @@ import {
   MenuItem, 
   IconButton, 
   CircularProgress,
-  Chip
+  Chip,
+  Alert
 } from '@mui/material';
 import { 
   Add, 
@@ -58,6 +59,7 @@ export default function AccountsPage() {
   const [closingDay, setClosingDay] = useState('');
   const [dueDay, setDueDay] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchAccounts = async () => {
     setLoading(true);
@@ -88,12 +90,14 @@ export default function AccountsPage() {
     setLimitAmount('');
     setClosingDay('');
     setDueDay('');
+    setError(null);
     setOpenDialog(true);
   };
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setError(null);
 
     try {
       const { data: userData } = await supabase.auth.getUser();
@@ -110,13 +114,14 @@ export default function AccountsPage() {
         due_day: type === 'credit_card' ? parseInt(dueDay) || null : null,
       };
 
-      const { error } = await supabase.from('accounts').insert([newAccount]);
-      if (error) throw error;
+      const { error: insertError } = await supabase.from('accounts').insert([newAccount]);
+      if (insertError) throw insertError;
 
       setOpenDialog(false);
       fetchAccounts();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Erro ao criar conta:', err);
+      setError(err.message || 'Erro inesperado ao salvar a conta.');
     } finally {
       setSubmitting(false);
     }
@@ -250,6 +255,11 @@ export default function AccountsPage() {
         <DialogTitle sx={{ fontWeight: 'bold' }}>Nova Conta / Cartão</DialogTitle>
         <form onSubmit={handleCreateAccount}>
           <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            {error && (
+              <Alert severity="error" sx={{ borderRadius: 3 }}>
+                {error}
+              </Alert>
+            )}
             <TextField
               select
               label="Tipo de Conta"
