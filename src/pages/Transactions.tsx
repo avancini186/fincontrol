@@ -19,16 +19,17 @@ import {
   Button,
   Chip,
   Checkbox,
-  Select
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
 } from '@mui/material';
 import { 
   Search, 
   Clear, 
   FileDownload,
   Delete,
-  Edit,
-  Check,
-  Close
+  Edit
 } from '@mui/icons-material';
 import { supabase } from '../supabaseClient';
 
@@ -367,8 +368,7 @@ export default function TransactionsPage() {
             <TableBody>
               {transactions.map((tx) => {
                 const isSelected = selectedIds.includes(tx.id);
-                const isEditing = editingId === tx.id;
-                const isExpense = isEditing ? (editForm.amount || 0) < 0 : tx.amount < 0;
+                const isExpense = tx.amount < 0;
                 
                 // Formatar data localmente
                 const formattedDate = new Date(tx.date + 'T00:00:00').toLocaleDateString('pt-BR');
@@ -388,62 +388,21 @@ export default function TransactionsPage() {
                     </TableCell>
 
                     {/* Data */}
-                    <TableCell>
-                      {isEditing ? (
-                        <TextField
-                          type="date"
-                          value={editForm.date || ''}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
-                          variant="standard"
-                          slotProps={{ input: { disableUnderline: true } }}
-                          sx={{ width: 120 }}
-                        />
-                      ) : (
-                        formattedDate
-                      )}
-                    </TableCell>
+                    <TableCell>{formattedDate}</TableCell>
 
                     {/* Descrição */}
-                    <TableCell sx={{ fontWeight: 500 }}>
-                      {isEditing ? (
-                        <TextField
-                          value={editForm.description || ''}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
-                          variant="standard"
-                          slotProps={{ input: { disableUnderline: true } }}
-                          fullWidth
-                        />
-                      ) : (
-                        tx.description
-                      )}
-                    </TableCell>
+                    <TableCell sx={{ fontWeight: 500 }}>{tx.description}</TableCell>
 
                     {/* Categoria */}
                     <TableCell>
-                      {isEditing ? (
-                        <Select
-                          value={editForm.category || 'Outros'}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, category: e.target.value }))}
-                          variant="standard"
-                          disableUnderline
-                          sx={{ minWidth: 120, fontWeight: 500 }}
-                        >
-                          {categories.map((cat) => (
-                            <MenuItem key={cat.id} value={cat.name}>
-                              {cat.name}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      ) : (
-                        <Chip 
-                          label={tx.category || 'Outros'} 
-                          size="small" 
-                          sx={{ bgcolor: 'rgba(255,255,255,0.04)', fontWeight: 500 }}
-                        />
-                      )}
+                      <Chip 
+                        label={tx.category || 'Outros'} 
+                        size="small" 
+                        sx={{ bgcolor: 'rgba(255,255,255,0.04)', fontWeight: 500 }}
+                      />
                     </TableCell>
 
-                    {/* Conta Origem (Apenas leitura) */}
+                    {/* Conta Origem */}
                     <TableCell sx={{ color: 'text.secondary' }}>
                       {tx.accounts ? `${tx.accounts.name} (${tx.accounts.bank})` : '-'}
                     </TableCell>
@@ -456,39 +415,14 @@ export default function TransactionsPage() {
                         color: isExpense ? '#F2B8B5' : '#81C784' 
                       }}
                     >
-                      {isEditing ? (
-                        <TextField
-                          type="number"
-                          value={editForm.amount || 0}
-                          onChange={(e) => setEditForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
-                          variant="standard"
-                          slotProps={{
-                            input: { disableUnderline: true },
-                            htmlInput: { style: { textAlign: 'right', fontWeight: 'bold', color: isExpense ? '#F2B8B5' : '#81C784' } }
-                          }}
-                          sx={{ width: 90 }}
-                        />
-                      ) : (
-                        `${isExpense ? '-' : ''} R$ ${Math.abs(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-                      )}
+                      {isExpense ? '-' : ''} R$ {Math.abs(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </TableCell>
 
                     {/* Ações */}
                     <TableCell sx={{ textAlign: 'center' }}>
-                      {isEditing ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
-                          <IconButton size="small" color="success" onClick={handleSaveEdit}>
-                            <Check />
-                          </IconButton>
-                          <IconButton size="small" color="error" onClick={handleCancelEdit}>
-                            <Close />
-                          </IconButton>
-                        </Box>
-                      ) : (
-                        <IconButton size="small" color="primary" onClick={() => handleStartEdit(tx)}>
-                          <Edit />
-                        </IconButton>
-                      )}
+                      <IconButton size="small" color="primary" onClick={() => handleStartEdit(tx)}>
+                        <Edit />
+                      </IconButton>
                     </TableCell>
                   </TableRow>
                 );
@@ -497,6 +431,61 @@ export default function TransactionsPage() {
           </Table>
         </TableContainer>
       )}
+
+      {/* Modal de Edição */}
+      <Dialog 
+        open={!!editingId} 
+        onClose={handleCancelEdit}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 'bold' }}>Editar Transação</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
+          <Box sx={{ height: 8 }} /> {/* Spacer */}
+          <TextField
+            label="Data"
+            type="date"
+            value={editForm.date || ''}
+            onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+            fullWidth
+            slotProps={{ inputLabel: { shrink: true } }}
+          />
+          <TextField
+            label="Descrição"
+            value={editForm.description || ''}
+            onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+            fullWidth
+          />
+          <TextField
+            select
+            label="Categoria"
+            value={editForm.category || 'Outros'}
+            onChange={(e) => setEditForm(prev => ({ ...prev, category: e.target.value }))}
+            fullWidth
+          >
+            {categories.map((cat) => (
+              <MenuItem key={cat.id} value={cat.name}>
+                {cat.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            label="Valor (R$)"
+            type="number"
+            value={editForm.amount || 0}
+            onChange={(e) => setEditForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+            fullWidth
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={handleCancelEdit} color="secondary">
+            Cancelar
+          </Button>
+          <Button onClick={handleSaveEdit} variant="contained" color="primary">
+            Salvar
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }
