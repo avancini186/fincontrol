@@ -378,9 +378,53 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
 
       if (parsedLocally) {
         if (localTransactions.length > 0) {
-          const { error: insertErr } = await supabase.from('transactions').insert(localTransactions);
-          if (insertErr) throw insertErr;
-          await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
+          // Buscar transações existentes para evitar duplicidade
+          setStatusMessage({ type: 'info', text: 'Verificando transações duplicadas...' });
+          const { data: existingTx, error: fetchTxErr } = await supabase
+            .from('transactions')
+            .select('date, amount, raw_description')
+            .eq('account_id', selectedAccount);
+
+          if (fetchTxErr) throw fetchTxErr;
+
+          const existingMap = new Set(
+            (existingTx || []).map(tx => `${tx.date}_${tx.amount}_${tx.raw_description.trim()}`)
+          );
+
+          const uniqueLocalTransactions = localTransactions.filter(tx => {
+            const key = `${tx.date}_${tx.amount}_${tx.raw_description.trim()}`;
+            return !existingMap.has(key);
+          });
+
+          const duplicatesCount = localTransactions.length - uniqueLocalTransactions.length;
+
+          if (uniqueLocalTransactions.length > 0) {
+            const { error: insertErr } = await supabase.from('transactions').insert(uniqueLocalTransactions);
+            if (insertErr) throw insertErr;
+            await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
+            
+            if (duplicatesCount > 0) {
+              setStatusMessage({ 
+                type: 'success', 
+                text: `Importação concluída! ${uniqueLocalTransactions.length} novos lançamentos adicionados (${duplicatesCount} duplicados foram ignorados). Redirecionando...` 
+              });
+            } else {
+              setStatusMessage({ 
+                type: 'success', 
+                text: 'Arquivo enviado e processado com sucesso! Redirecionando...' 
+              });
+            }
+          } else {
+            // Todos são duplicados
+            await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
+            setStatusMessage({ 
+              type: 'info', 
+              text: `Todos os ${localTransactions.length} lançamentos deste arquivo já foram importados anteriormente. Nenhum dado novo foi adicionado.` 
+            });
+            setUploadProgress(100);
+            setUploading(false);
+            return;
+          }
         } else {
           throw new Error('Nenhuma transação encontrada no arquivo PDF/OFX.');
         }
