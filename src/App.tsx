@@ -10,6 +10,7 @@ import AccountsPage from './pages/Accounts';
 import UploadPage from './pages/Upload';
 import ReviewPage from './pages/Review';
 import TransactionsPage from './pages/Transactions';
+import CategoriesPage from './pages/Categories';
 import SidebarLayout from './components/SidebarLayout';
 import { useAppStore } from './stores/useAppStore';
 
@@ -65,6 +66,8 @@ export default function App() {
         return <DashboardPage onNavigate={setCurrentPage} />;
       case 'accounts':
         return <AccountsPage />;
+      case 'categories':
+        return <CategoriesPage />;
       case 'upload':
         return <UploadPage onNavigate={setCurrentPage} />;
       case 'review':

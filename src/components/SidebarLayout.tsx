@@ -27,7 +27,8 @@ import {
   ExitToApp,
   AccountBalanceWallet,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Category as CategoryIcon
 } from '@mui/icons-material';
 import type { PageType } from '../types';
 import { supabase } from '../supabaseClient';
@@ -75,6 +76,7 @@ export default function SidebarLayout({ children, currentPage, onNavigate }: Sid
   const menuItems = [
     { text: 'Início', icon: <Dashboard />, value: 'dashboard' as PageType },
     { text: 'Contas', icon: <AccountBalance />, value: 'accounts' as PageType },
+    { text: 'Categorias', icon: <CategoryIcon />, value: 'categories' as PageType },
     { text: 'Importar', icon: <CloudUpload />, value: 'upload' as PageType },
     { text: 'Revisar', icon: <RateReview />, value: 'review' as PageType },
     { text: 'Transações', icon: <ReceiptLong />, value: 'transactions' as PageType },
