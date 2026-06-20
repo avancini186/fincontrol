@@ -11,6 +11,7 @@ import UploadPage from './pages/Upload';
 import ReviewPage from './pages/Review';
 import TransactionsPage from './pages/Transactions';
 import CategoriesPage from './pages/Categories';
+import BudgetsPage from './pages/Budgets';
 import SidebarLayout from './components/SidebarLayout';
 import { useAppStore } from './stores/useAppStore';
 
@@ -68,6 +69,8 @@ export default function App() {
         return <AccountsPage />;
       case 'categories':
         return <CategoriesPage />;
+      case 'budgets':
+        return <BudgetsPage />;
       case 'upload':
         return <UploadPage onNavigate={setCurrentPage} />;
       case 'review':
@@ -78,6 +81,7 @@ export default function App() {
         return <DashboardPage onNavigate={setCurrentPage} />;
     }
   };
+
 
   return (
     <SidebarLayout currentPage={currentPage} onNavigate={setCurrentPage}>

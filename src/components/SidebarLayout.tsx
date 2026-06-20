@@ -28,7 +28,8 @@ import {
   AccountBalanceWallet,
   ChevronLeft,
   ChevronRight,
-  Category as CategoryIcon
+  Category as CategoryIcon,
+  PieChart
 } from '@mui/icons-material';
 import type { PageType } from '../types';
 import { supabase } from '../supabaseClient';
@@ -77,10 +78,12 @@ export default function SidebarLayout({ children, currentPage, onNavigate }: Sid
     { text: 'Início', icon: <Dashboard />, value: 'dashboard' as PageType },
     { text: 'Contas', icon: <AccountBalance />, value: 'accounts' as PageType },
     { text: 'Categorias', icon: <CategoryIcon />, value: 'categories' as PageType },
+    { text: 'Orçamentos', icon: <PieChart />, value: 'budgets' as PageType },
     { text: 'Importar', icon: <CloudUpload />, value: 'upload' as PageType },
     { text: 'Revisar', icon: <RateReview />, value: 'review' as PageType },
     { text: 'Transações', icon: <ReceiptLong />, value: 'transactions' as PageType },
   ];
+
 
   const drawerWidth = isCollapsed ? 72 : 220;
 

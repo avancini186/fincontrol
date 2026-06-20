@@ -1,1 +1,2 @@
-export type PageType = 'dashboard' | 'accounts' | 'upload' | 'review' | 'transactions' | 'categories';
+export type PageType = 'dashboard' | 'accounts' | 'upload' | 'review' | 'transactions' | 'categories' | 'budgets';
+
