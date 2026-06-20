@@ -22,6 +22,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 import type { PageType } from '../types';
 import { supabase } from '../supabaseClient';
 import { parseNubankCSV, parseNubankPDFText } from '../parsers/nubank';
+import { parseBBCSV } from '../parsers/bb';
 
 interface Account {
   id: string;
@@ -334,10 +335,20 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         }
       } else if (fileExtension === 'csv') {
         try {
-          setStatusMessage({ type: 'info', text: 'Processando arquivo CSV do Nubank...' });
           const text = await file.text();
+          const firstLine = text.split(/\r?\n/)[0]?.toLowerCase() || '';
+          
+          let parsed: any[] = [];
           const currentUserName = userData.user?.user_metadata?.full_name || 'André Luís Augusto Avancini';
-          const parsed = parseNubankCSV(text, userId, selectedAccount, statement.id, currentUserName);
+          
+          if (firstLine.includes('detalhes') || firstLine.includes('lançamento') || firstLine.includes('lancamento') || firstLine.includes('nº documento')) {
+            setStatusMessage({ type: 'info', text: 'Processando arquivo CSV do Banco do Brasil...' });
+            parsed = parseBBCSV(text, userId, selectedAccount, statement.id, currentUserName);
+          } else {
+            setStatusMessage({ type: 'info', text: 'Processando arquivo CSV do Nubank...' });
+            parsed = parseNubankCSV(text, userId, selectedAccount, statement.id, currentUserName);
+          }
+          
           localTransactions = parsed.map(tx => ({
             ...tx,
             user_id: userId,
@@ -346,7 +357,7 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
           }));
           parsedLocally = true;
         } catch (csvErr) {
-          console.error('Erro ao parsear CSV do Nubank:', csvErr);
+          console.error('Erro ao parsear arquivo CSV:', csvErr);
         }
       } else if (fileExtension === 'pdf' && pdfText) {
         try {
