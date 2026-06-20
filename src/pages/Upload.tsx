@@ -271,9 +271,21 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
 
       // 2. Upload para o Supabase Storage
       setStatusMessage({ type: 'info', text: 'Enviando arquivo para o armazenamento seguro...' });
+      
+      let contentType = file.type;
+      if (fileExtension === 'ofx') {
+        contentType = 'text/plain';
+      } else if (fileExtension === 'csv') {
+        contentType = 'text/csv';
+      }
+
       const { error: uploadError } = await supabase.storage
         .from('statements')
-        .upload(filePath, file, { cacheControl: '3600', upsert: true });
+        .upload(filePath, file, { 
+          cacheControl: '3600', 
+          upsert: true,
+          contentType: contentType || undefined
+        });
 
       if (uploadError) throw uploadError;
       setUploadProgress(70);

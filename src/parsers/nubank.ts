@@ -189,7 +189,7 @@ export const parseNubankCSV = (csvText: string, _userId: string, _accountId: str
 
     if (!rawDate || !rawAmount) continue;
 
-    let dateStr = new Date().toISOString().split('T')[0];
+    let dateStr = '';
     if (rawDate.includes('-')) {
       dateStr = rawDate;
     } else if (rawDate.includes('/')) {
@@ -200,6 +200,10 @@ export const parseNubankCSV = (csvText: string, _userId: string, _accountId: str
         const year = parts[2].length === 2 ? `20${parts[2]}` : parts[2];
         dateStr = `${year}-${month}-${day}`;
       }
+    }
+
+    if (!dateStr || isNaN(Date.parse(dateStr)) || dateStr.startsWith('0000') || dateStr.includes('0000')) {
+      dateStr = new Date().toISOString().split('T')[0];
     }
 
     let amount = parseNumericValue(rawAmount);
@@ -255,7 +259,7 @@ export const parseNubankPDFText = (pdfText: string, _userId: string, _accountId:
     const rawAmountStr = amountMatch[1];
     let amount = parseNumericValue(rawAmountStr);
 
-    let dateStr = new Date().toISOString().split('T')[0];
+    let dateStr = '';
     let dateMatch = line.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/) || 
                     line.match(/\b(\d{1,2})\s+(JAN|FEB|FEV|MAR|APR|ABR|MAY|MAI|JUN|JUL|AGO|SEP|SET|OCT|OUT|NOV|DEC|DEZ)\b/i);
     
@@ -273,6 +277,10 @@ export const parseNubankPDFText = (pdfText: string, _userId: string, _accountId:
         const d = new Date(year, month, day);
         dateStr = d.toISOString().split('T')[0];
       }
+    }
+
+    if (!dateStr || isNaN(Date.parse(dateStr)) || dateStr.startsWith('0000') || dateStr.includes('0000')) {
+      dateStr = new Date().toISOString().split('T')[0];
     }
 
     let descriptionRaw = line
