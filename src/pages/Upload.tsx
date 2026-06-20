@@ -13,16 +13,22 @@ import {
   List,
   ListItem,
   ListItemIcon,
-  ListItemText
+  ListItemText,
+  Stepper,
+  Step,
+  StepLabel,
+  Divider,
+  Paper,
+  Chip
 } from '@mui/material';
 import CloudUpload from '@mui/icons-material/CloudUpload';
 import InsertDriveFile from '@mui/icons-material/InsertDriveFile';
 import CheckCircle from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
 import type { PageType } from '../types';
 import { supabase } from '../supabaseClient';
 import { parseNubankCSV, parseNubankPDFText } from '../parsers/nubank';
 import { parseBBCSV } from '../parsers/bb';
+import { tokens } from '../design-system/tokens';
 
 interface Account {
   id: string;
@@ -32,6 +38,13 @@ interface Account {
 
 interface UploadPageProps {
   onNavigate: (page: PageType) => void;
+}
+
+interface UploadHistoryItem {
+  id: string;
+  file_name: string;
+  created_at: string;
+  status: string;
 }
 
 const parseNumericValue = (val: string): number => {
@@ -59,11 +72,31 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
   const [selectedAccount, setSelectedAccount] = useState('');
   const [loadingAccounts, setLoadingAccounts] = useState(true);
   
+  // Stepper state
+  const [activeStep, setActiveStep] = useState(0);
+  const steps = ['Selecionar Conta', 'Enviar Arquivo', 'Processamento', 'Confirmação'];
+
   const [dragActive, setDragActive] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error' | 'info', text: string } | null>(null);
+  const [history, setHistory] = useState<UploadHistoryItem[]>([]);
+
+  const fetchHistory = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('statements')
+        .select('id, file_name, created_at, status')
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+      setHistory(data || []);
+    } catch (err) {
+      console.error('Erro ao buscar histórico de upload:', err);
+    }
+  };
 
   useEffect(() => {
     async function loadAccounts() {
@@ -81,23 +114,22 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
       }
     }
     loadAccounts();
+    fetchHistory();
   }, []);
 
-  // Garante que o bucket 'statements' exista no Supabase Storage
   const ensureStorageBucket = async () => {
     try {
       const { data: buckets } = await supabase.storage.listBuckets();
       const exists = buckets?.some(b => b.name === 'statements');
       if (!exists) {
-        // Tenta criar o bucket (requer que as permissões estejam corretas ou ignora falha silenciosamente se já criado)
         await supabase.storage.createBucket('statements', {
           public: false,
           allowedMimeTypes: ['text/csv', 'application/pdf', 'image/jpeg', 'image/png', 'text/plain', 'application/x-ofx'],
-          fileSizeLimit: 10485760 // 10MB
+          fileSizeLimit: 10485760
         });
       }
     } catch (err) {
-      console.warn('Nota: Não foi possível verificar/criar o bucket automaticamente (provavelmente por falta de permissão de admin. Se necessário, crie o bucket "statements" manualmente no painel).');
+      console.warn('Nota: Bucket statements já existente ou erro de permissão.');
     }
   };
 
@@ -154,7 +186,6 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
       }
 
       const amount = parseNumericValue(trnamt);
-      
       let category = 'Outros';
       const memoLower = memo.toLowerCase();
       if (memoLower.includes('mercado') || memoLower.includes('pao de acucar') || memoLower.includes('carrefour') || memoLower.includes('super')) {
@@ -184,8 +215,6 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     }
     return transactions;
   };
-
-
 
   const extractTextFromPDF = async (pdfFile: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -238,19 +267,19 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
     }
 
     setFile(selectedFile);
+    setActiveStep(1); // Progress to step 2: upload
   };
 
   const handleUpload = async () => {
     if (!file || !selectedAccount) return;
 
     setUploading(true);
-    setUploadProgress(10);
+    setActiveStep(2); // Step 3: processing
+    setUploadProgress(15);
     setStatusMessage({ type: 'info', text: 'Preparando upload...' });
 
     try {
       const fileExtension = file.name.split('.').pop()?.toLowerCase();
-      
-      // Extrair texto localmente se for PDF antes de qualquer coisa
       let pdfText = '';
       if (fileExtension === 'pdf') {
         try {
@@ -260,17 +289,14 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         }
       }
 
-      // 1. Verificar/criar o bucket
       await ensureStorageBucket();
-      setUploadProgress(30);
+      setUploadProgress(35);
 
       const { data: userData } = await supabase.auth.getUser();
       const userId = userData.user?.id;
       if (!userId) throw new Error('Usuário não autenticado');
 
       const filePath = `${userId}/${Date.now()}_${file.name}`;
-
-      // 2. Upload para o Supabase Storage
       setStatusMessage({ type: 'info', text: 'Enviando arquivo para o armazenamento seguro...' });
       
       let contentType = file.type;
@@ -292,9 +318,8 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         });
 
       if (uploadError) throw uploadError;
-      setUploadProgress(70);
+      setUploadProgress(60);
 
-      // 3. Registrar o arquivo na tabela `statements`
       setStatusMessage({ type: 'info', text: 'Registrando importação no banco de dados...' });
       const { data: statement, error: dbError } = await supabase
         .from('statements')
@@ -312,9 +337,8 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         .single();
 
       if (dbError) throw dbError;
-      setUploadProgress(90);
+      setUploadProgress(80);
 
-      // 4. Acionar a Edge Function para fazer o parsing (ou fazer localmente para PDF/OFX)
       let localTransactions: any[] = [];
       let parsedLocally = false;
 
@@ -337,7 +361,6 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
         try {
           const text = await file.text();
           const firstLine = text.split(/\r?\n/)[0]?.toLowerCase() || '';
-          
           let parsed: any[] = [];
           const currentUserName = userData.user?.user_metadata?.full_name || 'André Luís Augusto Avancini';
           
@@ -378,7 +401,6 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
 
       if (parsedLocally) {
         if (localTransactions.length > 0) {
-          // Buscar transações existentes para evitar duplicidade
           setStatusMessage({ type: 'info', text: 'Verificando transações duplicadas...' });
           const { data: existingTx, error: fetchTxErr } = await supabase
             .from('transactions')
@@ -403,45 +425,31 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
             if (insertErr) throw insertErr;
             await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
             
-            if (duplicatesCount > 0) {
-              setStatusMessage({ 
-                type: 'success', 
-                text: `Importação concluída! ${uniqueLocalTransactions.length} novos lançamentos adicionados (${duplicatesCount} duplicados foram ignorados). Redirecionando...` 
-              });
-            } else {
-              setStatusMessage({ 
-                type: 'success', 
-                text: 'Arquivo enviado e processado com sucesso! Redirecionando...' 
-              });
-            }
+            setStatusMessage({ 
+              type: 'success', 
+              text: `Sucesso! ${uniqueLocalTransactions.length} novos lançamentos importados (${duplicatesCount} duplicatas ignoradas).` 
+            });
           } else {
-            // Todos são duplicados
             await supabase.from('statements').update({ status: 'done' }).eq('id', statement.id);
             setStatusMessage({ 
               type: 'info', 
-              text: `Todos os ${localTransactions.length} lançamentos deste arquivo já foram importados anteriormente. Nenhum dado novo foi adicionado.` 
+              text: `Todos os ${localTransactions.length} lançamentos deste arquivo já existiam no banco de dados.` 
             });
-            setUploadProgress(100);
-            setUploading(false);
-            return;
           }
         } else {
-          throw new Error('Nenhuma transação encontrada no arquivo PDF/OFX.');
+          throw new Error('Nenhuma transação identificada no extrato.');
         }
       } else {
-        // Para imagens (PNG/JPG), chamamos a Edge Function inteligente
         setStatusMessage({ type: 'info', text: 'Processando com inteligência artificial...' });
         const { error: functionError } = await supabase.functions.invoke('parse-statement', {
           body: { statementId: statement.id }
         });
-        
-        if (functionError) {
-          throw functionError;
-        }
+        if (functionError) throw functionError;
       }
 
       setUploadProgress(100);
-      setStatusMessage({ type: 'success', text: 'Arquivo enviado e processado com sucesso! Redirecionando para a tela de revisão...' });
+      setActiveStep(3); // Step 4: confirmation
+      fetchHistory();
       
       setTimeout(() => {
         onNavigate('review');
@@ -449,17 +457,18 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
 
     } catch (err: any) {
       console.error(err);
-      setStatusMessage({ type: 'error', text: err.message || 'Falha no processamento. Verifique sua conexão ou configurações.' });
+      setStatusMessage({ type: 'error', text: err.message || 'Falha no processamento. Tente novamente.' });
+      setActiveStep(1);
     } finally {
       setUploading(false);
     }
   };
 
   return (
-    <Box sx={{ maxWidth: 600, mx: 'auto', mt: 4 }}>
-      <Typography variant="h5" sx={{ fontWeight: 'bold', mb: 1 }}>Importar Extrato ou Fatura</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-        Faça o upload do seu extrato bancário ou fatura nos formatos CSV, PDF, JPG, PNG ou OFX para processamento automático.
+    <Box sx={{ maxWidth: 800, mx: 'auto', mt: 2 }}>
+      <Typography variant="h2" sx={{ fontFamily: 'Outfit, sans-serif', fontWeight: 700, mb: 1 }}>Importar Extrato</Typography>
+      <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
+        Siga o fluxo para carregar e processar automaticamente os extratos ou faturas da sua conta.
       </Typography>
 
       {loadingAccounts ? (
@@ -474,103 +483,183 @@ export default function UploadPage({ onNavigate }: UploadPageProps) {
           </Button>
         </Alert>
       ) : (
-        <Card sx={{ bgcolor: 'background.paper', p: 2 }}>
-          <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <TextField
-              select
-              label="Conta de Destino"
-              value={selectedAccount}
-              onChange={(e) => setSelectedAccount(e.target.value)}
-              fullWidth
-            >
-              {accounts.map((acc) => (
-                <MenuItem key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.type === 'checking' ? 'Conta Corrente' : 'Cartão de Crédito'})
-                </MenuItem>
-              ))}
-            </TextField>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {/* Stepper Wizard Indicator */}
+          <Stepper activeStep={activeStep} alternativeLabel sx={{ '& .MuiStepLabel-label': { fontSize: '0.8rem', mt: 0.5 } }}>
+            {steps.map((label) => (
+              <Step key={label}>
+                <StepLabel>{label}</StepLabel>
+              </Step>
+            ))}
+          </Stepper>
 
-            {/* Drag and Drop Zone */}
-            <Box
-              onDragEnter={handleDrag}
-              onDragOver={handleDrag}
-              onDragLeave={handleDrag}
-              onDrop={handleDrop}
-              sx={{
-                border: '2px dashed',
-                borderColor: dragActive ? 'primary.main' : 'rgba(255,255,255,0.12)',
-                borderRadius: 4,
-                p: 5,
-                textAlign: 'center',
-                bgcolor: dragActive ? 'primary.dark' : 'transparent',
-                cursor: 'pointer',
-                position: 'relative',
-                transition: 'all 0.2s ease',
-                '&:hover': {
-                  borderColor: 'primary.main',
-                  bgcolor: 'rgba(255, 255, 255, 0.02)',
-                }
-              }}
-              onClick={() => document.getElementById('file-input')?.click()}
-            >
-              <input
-                id="file-input"
-                type="file"
-                style={{ display: 'none' }}
-                onChange={handleFileInput}
-                accept=".csv,.pdf,.jpg,.jpeg,.png,.ofx"
-              />
-              <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                Arraste seu extrato aqui ou clique para selecionar
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
-                Formatos aceitos: CSV, PDF, JPG, PNG ou OFX (Max 10MB)
-              </Typography>
-            </Box>
+          <Card>
+            <CardContent sx={{ display: 'flex', flexDirection: 'column', gap: 3, p: 3 }}>
+              {/* Step 1: Select Account */}
+              {activeStep === 0 && (
+                <Box>
+                  <Typography variant="h3" sx={{ mb: 2 }}>Selecione a Conta de Destino</Typography>
+                  <TextField
+                    select
+                    label="Conta / Cartão"
+                    value={selectedAccount}
+                    onChange={(e) => setSelectedAccount(e.target.value)}
+                    fullWidth
+                  >
+                    {accounts.map((acc) => (
+                      <MenuItem key={acc.id} value={acc.id}>
+                        {acc.name} ({acc.type === 'checking' ? 'Conta Corrente' : 'Cartão de Crédito'})
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  <Button variant="contained" color="primary" sx={{ mt: 3, float: 'right' }} onClick={() => setActiveStep(1)}>
+                    Continuar
+                  </Button>
+                </Box>
+              )}
 
-            {file && (
-              <List sx={{ bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 3, p: 1 }}>
-                <ListItem>
-                  <ListItemIcon>
-                    <InsertDriveFile color="primary" />
-                  </ListItemIcon>
-                  <ListItemText 
-                    primary={file.name} 
-                    secondary={`${(file.size / 1024 / 1024).toFixed(2)} MB`} 
-                  />
-                </ListItem>
-              </List>
-            )}
+              {/* Step 2: Drag/drop or upload file */}
+              {activeStep === 1 && (
+                <Box>
+                  <Typography variant="h3" sx={{ mb: 2 }}>Faça o Upload do Arquivo</Typography>
+                  <Box
+                    onDragEnter={handleDrag}
+                    onDragOver={handleDrag}
+                    onDragLeave={handleDrag}
+                    onDrop={handleDrop}
+                    sx={{
+                      border: '2px dashed rgba(255, 255, 255, 0.12)',
+                      borderColor: dragActive ? 'primary.main' : 'rgba(255,255,255,0.12)',
+                      borderRadius: 4,
+                      p: 5,
+                      textAlign: 'center',
+                      bgcolor: dragActive ? 'rgba(168, 85, 247, 0.05)' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all 150ms ease',
+                      '&:hover': {
+                        borderColor: 'primary.main',
+                        bgcolor: 'rgba(255, 255, 255, 0.02)',
+                      }
+                    }}
+                    onClick={() => document.getElementById('file-input')?.click()}
+                  >
+                    <input
+                      id="file-input"
+                      type="file"
+                      style={{ display: 'none' }}
+                      onChange={handleFileInput}
+                      accept=".csv,.pdf,.jpg,.jpeg,.png,.ofx"
+                    />
+                    <CloudUpload sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
+                    <Typography variant="body1" sx={{ fontWeight: 600 }}>
+                      Arraste seu extrato aqui ou clique para selecionar
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>
+                      Formatos aceitos: CSV, PDF, JPG, PNG ou OFX (Max 10MB)
+                    </Typography>
+                  </Box>
 
-            {statusMessage && (
-              <Alert 
-                severity={statusMessage.type === 'info' ? 'info' : statusMessage.type} 
-                icon={statusMessage.type === 'success' ? <CheckCircle /> : statusMessage.type === 'error' ? <ErrorIcon /> : undefined}
-                sx={{ borderRadius: 3 }}
-              >
-                {statusMessage.text}
-              </Alert>
-            )}
+                  {file && (
+                    <List sx={{ bgcolor: 'rgba(255,255,255,0.02)', borderRadius: 2, p: 1, mt: 2 }}>
+                      <ListItem>
+                        <ListItemIcon>
+                          <InsertDriveFile color="primary" />
+                        </ListItemIcon>
+                        <ListItemText 
+                          primary={file.name} 
+                          secondary={`${(file.size / 1024 / 1024).toFixed(2)} MB`} 
+                        />
+                      </ListItem>
+                    </List>
+                  )}
 
-            {uploading && (
-              <Box sx={{ width: '100%', mt: 1 }}>
-                <LinearProgress variant="determinate" value={uploadProgress} sx={{ height: 6, borderRadius: 3 }} />
-              </Box>
-            )}
+                  {statusMessage && (
+                    <Alert severity={statusMessage.type} sx={{ borderRadius: 3, mt: 2 }}>
+                      {statusMessage.text}
+                    </Alert>
+                  )}
 
-            <Button
-              variant="contained"
-              color="primary"
-              size="large"
-              disabled={!file || uploading}
-              onClick={handleUpload}
-              sx={{ mt: 2 }}
-            >
-              {uploading ? 'Processando Arquivo...' : 'Importar e Processar'}
-            </Button>
-          </CardContent>
-        </Card>
+                  <Box sx={{ display: 'flex', gap: 2, justifyContent: 'space-between', mt: 3 }}>
+                    <Button variant="outlined" onClick={() => setActiveStep(0)}>
+                      Voltar
+                    </Button>
+                    <Button variant="contained" disabled={!file || uploading} onClick={handleUpload}>
+                      {uploading ? 'Processando...' : 'Importar e Processar'}
+                    </Button>
+                  </Box>
+                </Box>
+              )}
+
+              {/* Step 3: Processing */}
+              {activeStep === 2 && (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <CircularProgress size={48} sx={{ mb: 2 }} />
+                  <Typography variant="h3" sx={{ mb: 1 }}>Processando seu arquivo...</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    Por favor, aguarde enquanto extraímos e consolidamos os lançamentos.
+                  </Typography>
+                  <Box sx={{ width: '80%', mx: 'auto', mt: 1 }}>
+                    <LinearProgress variant="determinate" value={uploadProgress} sx={{ height: 6, borderRadius: 3 }} />
+                  </Box>
+                  {statusMessage && (
+                    <Alert severity="info" sx={{ width: '80%', mx: 'auto', mt: 3, borderRadius: 3 }}>
+                      {statusMessage.text}
+                    </Alert>
+                  )}
+                </Box>
+              )}
+
+              {/* Step 4: Success confirmation */}
+              {activeStep === 3 && (
+                <Box sx={{ textAlign: 'center', py: 4 }}>
+                  <CheckCircle sx={{ fontSize: 64, color: tokens.colors.semantic.income, mb: 2 }} />
+                  <Typography variant="h3" sx={{ mb: 1 }}>Importação Concluída com sucesso!</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                    Todos os lançamentos válidos foram importados. Redirecionando para a tela de revisão...
+                  </Typography>
+                </Box>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Upload History List */}
+          <Box>
+            <Typography variant="h3" sx={{ mb: 2 }}>Últimos Arquivos Importados</Typography>
+            <Paper variant="outlined" sx={{ border: `1px solid ${tokens.colors.neutral.border}`, borderRadius: 3, bgcolor: tokens.colors.neutral.surface, p: 2 }}>
+              {history.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 2 }}>
+                  Nenhum arquivo importado recentemente.
+                </Typography>
+              ) : (
+                <List sx={{ p: 0, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {history.map((h, i) => (
+                    <React.Fragment key={h.id}>
+                      {i > 0 && <Divider sx={{ opacity: 0.05 }} />}
+                      <ListItem sx={{ py: 1, px: 1, justifyContent: 'space-between' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <InsertDriveFile sx={{ color: 'text.secondary' }} />
+                          <Box>
+                            <Typography variant="body1" sx={{ fontWeight: 600 }}>{h.file_name}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {new Date(h.created_at).toLocaleDateString('pt-BR')} às {new Date(h.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        <Chip 
+                          label={h.status === 'done' ? 'Processado' : h.status === 'pending' ? 'Aguardando Revisão' : 'Erro'} 
+                          color={h.status === 'done' ? 'success' : h.status === 'pending' ? 'warning' : 'error'}
+                          size="small"
+                          variant="outlined"
+                          sx={{ fontWeight: 600, fontSize: '11px' }}
+                        />
+                      </ListItem>
+                    </React.Fragment>
+                  ))}
+                </List>
+              )}
+            </Paper>
+          </Box>
+        </Box>
       )}
     </Box>
   );

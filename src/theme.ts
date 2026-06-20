@@ -1,66 +1,85 @@
 import { createTheme } from '@mui/material/styles';
+import { tokens } from './design-system/tokens';
 
 export const theme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#D0BCFF', // M3 Dark Primary
-      light: '#E8DEF8',
-      dark: '#381E72',
-      contrastText: '#381E72',
+      main: tokens.colors.brand.purpleLight, // #A855F7
+      light: '#C084FC',
+      dark: tokens.colors.brand.purpleDark, // #381E72
+      contrastText: '#FFFFFF',
     },
     secondary: {
-      main: '#CCC2DC', // M3 Dark Secondary
+      main: '#CCC2DC',
       light: '#E8DEF8',
       dark: '#332D41',
       contrastText: '#332D41',
     },
     background: {
-      default: '#141218', // M3 Dark Background
-      paper: '#211F26',   // M3 Dark Surface/Container
+      default: tokens.colors.neutral.background, // #0B0A0E
+      paper: tokens.colors.neutral.surface, // #15131A
     },
     error: {
-      main: '#F2B8B5',
-      contrastText: '#601410',
+      main: tokens.colors.semantic.expense, // #E74C3C
+      contrastText: '#FFFFFF',
     },
     success: {
-      main: '#81C784',
-      contrastText: '#003300',
+      main: tokens.colors.semantic.income, // #2ECC71
+      contrastText: '#FFFFFF',
+    },
+    warning: {
+      main: tokens.colors.semantic.warning, // #F1C40F
+      contrastText: '#000000',
+    },
+    info: {
+      main: tokens.colors.semantic.investment, // #3498DB
+      contrastText: '#FFFFFF',
     },
     text: {
-      primary: '#E6E1E5',
-      secondary: '#CAC4D0',
+      primary: tokens.colors.neutral.textPrimary,
+      secondary: tokens.colors.neutral.textSecondary,
     },
   },
   typography: {
-    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
-    h1: { fontSize: '2.5rem', fontWeight: 600 },
-    h2: { fontSize: '2rem', fontWeight: 600 },
-    h3: { fontSize: '1.75rem', fontWeight: 600 },
-    h4: { fontSize: '1.5rem', fontWeight: 500 },
-    h5: { fontSize: '1.25rem', fontWeight: 500 },
-    h6: { fontSize: '1rem', fontWeight: 500 },
-    button: { textTransform: 'none', fontWeight: 500 },
+    fontFamily: tokens.typography.fontFamily,
+    h1: { fontSize: tokens.typography.sizes.h1, fontWeight: tokens.typography.weights.bold },
+    h2: { fontSize: tokens.typography.sizes.h2, fontWeight: tokens.typography.weights.bold },
+    h3: { fontSize: tokens.typography.sizes.h3, fontWeight: tokens.typography.weights.semiBold },
+    body1: { fontSize: tokens.typography.sizes.body, fontWeight: tokens.typography.weights.regular },
+    body2: { fontSize: tokens.typography.sizes.small, fontWeight: tokens.typography.weights.regular },
+    button: { textTransform: 'none', fontWeight: tokens.typography.weights.medium },
   },
   shape: {
-    borderRadius: 16, // Cantos arredondados característicos do Material 3
+    borderRadius: 12,
   },
   components: {
     MuiButton: {
       styleOverrides: {
         root: {
-          borderRadius: 24, // Botões em formato "pill" do M3
-          padding: '10px 24px',
+          borderRadius: 24, // pill button style
+          padding: '8px 20px',
+          fontWeight: 600,
+          transition: 'all 150ms ease',
+          '&:hover': {
+            transform: 'translateY(-1px)',
+            boxShadow: tokens.shadows.sm,
+          },
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 20,
+          borderRadius: 16, // using borders.radius.lg
           backgroundImage: 'none',
-          boxShadow: 'none',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          boxShadow: tokens.shadows.md,
+          border: `1px solid ${tokens.colors.neutral.border}`,
+          backgroundColor: tokens.colors.neutral.surface,
+          transition: 'all 150ms ease',
+          '&:hover': {
+            borderColor: 'rgba(168, 85, 247, 0.25)', // slight purple glow
+          },
         },
       },
     },
@@ -72,7 +91,23 @@ export const theme = createTheme({
         root: {
           '& .MuiOutlinedInput-root': {
             borderRadius: 12,
+            backgroundColor: 'rgba(255, 255, 255, 0.02)',
+            transition: 'all 150ms ease',
+            '&:hover': {
+              backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            },
+            '&.Mui-focused': {
+              backgroundColor: 'rgba(255, 255, 255, 0.01)',
+            },
           },
+        },
+      },
+    },
+    MuiSelect: {
+      styleOverrides: {
+        root: {
+          borderRadius: 12,
+          backgroundColor: 'rgba(255, 255, 255, 0.02)',
         },
       },
     },
