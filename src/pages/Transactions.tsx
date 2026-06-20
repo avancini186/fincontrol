@@ -18,13 +18,17 @@ import {
   IconButton,
   Button,
   Chip,
-  Checkbox
+  Checkbox,
+  Select
 } from '@mui/material';
 import { 
   Search, 
   Clear, 
   FileDownload,
-  Delete
+  Delete,
+  Edit,
+  Check,
+  Close
 } from '@mui/icons-material';
 import { supabase } from '../supabaseClient';
 
@@ -62,6 +66,8 @@ export default function TransactionsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<Partial<Transaction>>({});
 
   const fetchData = async () => {
     setLoading(true);
@@ -155,6 +161,42 @@ export default function TransactionsPage() {
       setSelectedIds([]);
     } catch (err) {
       console.error('Erro ao excluir transações:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartEdit = (tx: Transaction) => {
+    setEditingId(tx.id);
+    setEditForm({ ...tx });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditForm({});
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId || !editForm.id) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .update({
+          date: editForm.date,
+          description: editForm.description,
+          category: editForm.category,
+          amount: editForm.amount
+        })
+        .eq('id', editingId);
+
+      if (error) throw error;
+
+      setTransactions(prev => prev.map(t => t.id === editingId ? { ...t, ...editForm } as Transaction : t));
+      setEditingId(null);
+      setEditForm({});
+    } catch (err) {
+      console.error('Erro ao salvar transação:', err);
     } finally {
       setLoading(false);
     }
@@ -319,12 +361,15 @@ export default function TransactionsPage() {
                 <TableCell sx={{ fontWeight: 'bold' }}>Categoria</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Conta Origem</TableCell>
                 <TableCell sx={{ fontWeight: 'bold', textAlign: 'right' }}>Valor (R$)</TableCell>
+                <TableCell sx={{ fontWeight: 'bold', textAlign: 'center' }}>Ações</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {transactions.map((tx) => {
-                const isExpense = tx.amount < 0;
                 const isSelected = selectedIds.includes(tx.id);
+                const isEditing = editingId === tx.id;
+                const isExpense = isEditing ? (editForm.amount || 0) < 0 : tx.amount < 0;
+                
                 // Formatar data localmente
                 const formattedDate = new Date(tx.date + 'T00:00:00').toLocaleDateString('pt-BR');
                 
@@ -341,18 +386,69 @@ export default function TransactionsPage() {
                         onChange={(e) => handleSelectOne(tx.id, e.target.checked)}
                       />
                     </TableCell>
-                    <TableCell>{formattedDate}</TableCell>
-                    <TableCell sx={{ fontWeight: 500 }}>{tx.description}</TableCell>
+
+                    {/* Data */}
                     <TableCell>
-                      <Chip 
-                        label={tx.category || 'Outros'} 
-                        size="small" 
-                        sx={{ bgcolor: 'rgba(255,255,255,0.04)', fontWeight: 500 }}
-                      />
+                      {isEditing ? (
+                        <TextField
+                          type="date"
+                          value={editForm.date || ''}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, date: e.target.value }))}
+                          variant="standard"
+                          slotProps={{ input: { disableUnderline: true } }}
+                          sx={{ width: 120 }}
+                        />
+                      ) : (
+                        formattedDate
+                      )}
                     </TableCell>
+
+                    {/* Descrição */}
+                    <TableCell sx={{ fontWeight: 500 }}>
+                      {isEditing ? (
+                        <TextField
+                          value={editForm.description || ''}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, description: e.target.value }))}
+                          variant="standard"
+                          slotProps={{ input: { disableUnderline: true } }}
+                          fullWidth
+                        />
+                      ) : (
+                        tx.description
+                      )}
+                    </TableCell>
+
+                    {/* Categoria */}
+                    <TableCell>
+                      {isEditing ? (
+                        <Select
+                          value={editForm.category || 'Outros'}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, category: e.target.value }))}
+                          variant="standard"
+                          disableUnderline
+                          sx={{ minWidth: 120, fontWeight: 500 }}
+                        >
+                          {categories.map((cat) => (
+                            <MenuItem key={cat.id} value={cat.name}>
+                              {cat.name}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      ) : (
+                        <Chip 
+                          label={tx.category || 'Outros'} 
+                          size="small" 
+                          sx={{ bgcolor: 'rgba(255,255,255,0.04)', fontWeight: 500 }}
+                        />
+                      )}
+                    </TableCell>
+
+                    {/* Conta Origem (Apenas leitura) */}
                     <TableCell sx={{ color: 'text.secondary' }}>
                       {tx.accounts ? `${tx.accounts.name} (${tx.accounts.bank})` : '-'}
                     </TableCell>
+
+                    {/* Valor */}
                     <TableCell 
                       sx={{ 
                         textAlign: 'right', 
@@ -360,7 +456,39 @@ export default function TransactionsPage() {
                         color: isExpense ? '#F2B8B5' : '#81C784' 
                       }}
                     >
-                      {isExpense ? '-' : ''} R$ {Math.abs(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      {isEditing ? (
+                        <TextField
+                          type="number"
+                          value={editForm.amount || 0}
+                          onChange={(e) => setEditForm(prev => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))}
+                          variant="standard"
+                          slotProps={{
+                            input: { disableUnderline: true },
+                            htmlInput: { style: { textAlign: 'right', fontWeight: 'bold', color: isExpense ? '#F2B8B5' : '#81C784' } }
+                          }}
+                          sx={{ width: 90 }}
+                        />
+                      ) : (
+                        `${isExpense ? '-' : ''} R$ ${Math.abs(tx.amount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                      )}
+                    </TableCell>
+
+                    {/* Ações */}
+                    <TableCell sx={{ textAlign: 'center' }}>
+                      {isEditing ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                          <IconButton size="small" color="success" onClick={handleSaveEdit}>
+                            <Check />
+                          </IconButton>
+                          <IconButton size="small" color="error" onClick={handleCancelEdit}>
+                            <Close />
+                          </IconButton>
+                        </Box>
+                      ) : (
+                        <IconButton size="small" color="primary" onClick={() => handleStartEdit(tx)}>
+                          <Edit />
+                        </IconButton>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
