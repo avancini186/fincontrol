@@ -24,7 +24,7 @@ export interface DashboardTransaction {
   date: string;
   description: string;
   amount: number;
-  type: 'debit' | 'credit' | 'pix' | 'transfer' | 'fee';
+  type: string;
   category: string;
   merchant: string | null;
   raw_description: string;
