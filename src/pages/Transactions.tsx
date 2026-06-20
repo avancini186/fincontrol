@@ -17,12 +17,14 @@ import {
   CircularProgress,
   IconButton,
   Button,
-  Chip
+  Chip,
+  Checkbox
 } from '@mui/material';
 import { 
   Search, 
   Clear, 
-  FileDownload 
+  FileDownload,
+  Delete
 } from '@mui/icons-material';
 import { supabase } from '../supabaseClient';
 
@@ -59,6 +61,7 @@ export default function TransactionsPage() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -116,7 +119,45 @@ export default function TransactionsPage() {
     setSearch('');
     setAccountFilter('all');
     setCategoryFilter('all');
+    setSelectedIds([]);
     fetchData();
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(transactions.map(t => t.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleSelectOne = (id: string, checked: boolean) => {
+    if (checked) {
+      setSelectedIds(prev => [...prev, id]);
+    } else {
+      setSelectedIds(prev => prev.filter(item => item !== id));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.length === 0) return;
+    if (!window.confirm(`Tem certeza que deseja excluir as ${selectedIds.length} transações selecionadas?`)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('transactions')
+        .delete()
+        .in('id', selectedIds);
+
+      if (error) throw error;
+      setTransactions(prev => prev.filter(t => !selectedIds.includes(t.id)));
+      setSelectedIds([]);
+    } catch (err) {
+      console.error('Erro ao excluir transações:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleExportCSV = () => {
@@ -152,14 +193,26 @@ export default function TransactionsPage() {
             Consulte todas as transações importadas e confirmadas em seu painel.
           </Typography>
         </Box>
-        <Button 
-          variant="outlined" 
-          startIcon={<FileDownload />} 
-          onClick={handleExportCSV}
-          disabled={transactions.length === 0}
-        >
-          Exportar CSV
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          {selectedIds.length > 0 && (
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<Delete />}
+              onClick={handleDeleteSelected}
+            >
+              Excluir Selecionadas ({selectedIds.length})
+            </Button>
+          )}
+          <Button 
+            variant="outlined" 
+            startIcon={<FileDownload />} 
+            onClick={handleExportCSV}
+            disabled={transactions.length === 0}
+          >
+            Exportar CSV
+          </Button>
+        </Box>
       </Box>
 
       {/* Grid de Filtros */}
@@ -254,6 +307,13 @@ export default function TransactionsPage() {
           <Table sx={{ minWidth: 650 }} size="medium">
             <TableHead sx={{ bgcolor: 'rgba(255,255,255,0.02)' }}>
               <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedIds.length > 0 && selectedIds.length < transactions.length}
+                    checked={transactions.length > 0 && selectedIds.length === transactions.length}
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                  />
+                </TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Data</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Descrição</TableCell>
                 <TableCell sx={{ fontWeight: 'bold' }}>Categoria</TableCell>
@@ -264,11 +324,23 @@ export default function TransactionsPage() {
             <TableBody>
               {transactions.map((tx) => {
                 const isExpense = tx.amount < 0;
+                const isSelected = selectedIds.includes(tx.id);
                 // Formatar data localmente
                 const formattedDate = new Date(tx.date + 'T00:00:00').toLocaleDateString('pt-BR');
                 
                 return (
-                  <TableRow key={tx.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                  <TableRow 
+                    key={tx.id} 
+                    hover 
+                    selected={isSelected}
+                    sx={{ '&:last-child td, &:last-child th': { border: 0 } }}
+                  >
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={isSelected}
+                        onChange={(e) => handleSelectOne(tx.id, e.target.checked)}
+                      />
+                    </TableCell>
                     <TableCell>{formattedDate}</TableCell>
                     <TableCell sx={{ fontWeight: 500 }}>{tx.description}</TableCell>
                     <TableCell>
